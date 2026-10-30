@@ -1,0 +1,69 @@
+# MythicShields — глобальная конфигурация
+#
+# ВАЖНО: вся настройка щитов идёт через plugins/MythicMobs/Items/*.yml —
+# секция Shield прямо внутри предмета MythicMobs. Пример:
+#
+# BastionShield:
+#   Id: NETHERITE_SWORD
+#   Display: '<gold>Бастион</gold>'
+#   Shield:
+#     Enabled: true
+#     Durability:
+#       Max: '80'
+#       CostPerBlock: '2'
+#       BreakThreshold: 0
+#       OnBreak: STAY_BROKEN
+#       # OnBreak — что происходит при поломке (прочность <= BreakThreshold):
+#       #   STAY_BROKEN        — предмет остаётся, щит снимается и недоступен OnBreakTicks
+#       #   VANISH / BREAK_ITEM      — предмет уничтожается
+#       #   DROP_TO_INVENTORY  — предмет безопасно возвращается в инвентарь
+#       #   REPAIR             — прочность сразу восстанавливается до Max; щит
+#       #                        недоступен RaiseCooldown.OnBreakTicks
+#     Blocking:
+#       DamageReduction: 0.35
+#       Resistances:
+#         PROJECTILE: 0.5
+#       KnockbackResistance: 0.7
+#       # Скоуп защиты:
+#       #   ProtectFrom: ALL          — щит защищает от всего (по умолчанию)
+#       #   ProtectFrom:              — или только от перечисленных типов урона
+#       #     - ENTITY_ATTACK         —   (EntityDamageEvent.DamageCause),
+#       #     - PROJECTILE            —   остальной урон проходит целиком, прочность не тратится
+#       #   IgnoreTypes:              — урон, который ВСЕГДА пробивает щит целиком,
+#       #     - MAGIC                 —   даже если он в списке защиты
+#
+# Здесь задаются только глобальные значения по умолчанию.
+
+Debug: false
+
+Defaults:
+  # Значения по умолчанию, если блок не задан в предмете
+  Durability:
+    Max: 100
+    CostPerBlock: 2
+    BreakThreshold: 0
+    OnBreak: STAY_BROKEN
+  Resource:
+    Type: DURABILITY
+    RequireOnBlock: true
+    MinResource: 1
+  Regen:
+    Amount: 0.5
+    Interval: 40
+    DelayAfterBlock: 60
+    RegenWhileBlocking: false
+  RaiseCooldown:
+    Ticks: 0
+    OnBreakTicks: 100
+    Message: '&cЩит ещё не готов! (&e{time} &cсек.)'
+  Blocking:
+    DamageReduction: 0.3
+    DamageMultiplier: 1.0
+    KnockbackResistance: 0.5
+  AbilityBlock:
+    BlockAllWhileBlocking: false
+    BlockedSkills: []
+    CooldownAfterBlock: 0
+
+Messages:
+  Prefix: '&8[&6MythicShields&8]&r '

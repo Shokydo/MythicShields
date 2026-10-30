@@ -1,0 +1,21 @@
+# MythicShields — глобальная конфигурация
+Debug: false
+
+Defaults:
+  Durability:
+    Max: 100
+    CostPerBlock: 2
+    BreakThreshold: 0
+    OnBreak: STAY_BROKEN
+  Regen:
+    Amount: 0.5
+    Interval: 40
+    DelayAfterBlock: 60
+    RegenWhileBlocking: false
+  RaiseCooldown:
+    Ticks: 0
+    OnBreakTicks: 100
+  Blocking:
+    DamageReduction: 0.3
+    DamageMultiplier: 1.0
+    KnockbackResistance: 0.5

@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MythicShields — Вики</title>
+<style>
+  :root{
+    --bg:#10141a; --panel:#161c24; --panel2:#1b232e; --text:#d6dee8; --muted:#8b98a8;
+    --accent:#f5a623; --accent2:#ffb84d; --code:#0d1117; --border:#2a3441;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI",system-ui,sans-serif;}
+  .wrap{max-width:1050px;margin:0 auto;padding:32px 22px 80px;}
+  h1{font-size:2rem;color:var(--accent);margin:.2em 0 .5em;}
+  h2{font-size:1.45rem;color:var(--accent2);border-bottom:1px solid var(--border);padding-bottom:.3em;margin-top:2.2em;}
+  h3{font-size:1.1rem;color:#e8c86a;margin:1.6em 0 .5em;}
+  p{margin:.7em 0;}
+  a{color:#6cc4ff;text-decoration:none;} a:hover{text-decoration:underline;}
+  code{background:var(--code);border:1px solid var(--border);border-radius:5px;padding:.12em .38em;font:.88em/1.5 Consolas,"JetBrains Mono",monospace;color:#a5d6a7;}
+  pre{background:var(--code);border:1px solid var(--border);border-radius:10px;padding:14px 16px;overflow-x:auto;margin:.9em 0;}
+  pre code{background:none;border:none;padding:0;color:#d6dee8;}
+  pre.yaml code{color:#bfe3c0;}
+  table{border-collapse:collapse;width:100%;margin:.9em 0;font-size:.95rem;}
+  th,td{border:1px solid var(--border);padding:7px 11px;text-align:left;vertical-align:top;}
+  th{background:var(--panel2);color:var(--accent2);font-weight:600;white-space:nowrap;}
+  tr:nth-child(even) td{background:var(--panel);}
+  blockquote{margin:1em 0;padding:.7em 1.1em;background:var(--panel);border-left:4px solid var(--accent);border-radius:0 8px 8px 0;color:var(--muted);}
+  blockquote b, blockquote strong{color:var(--text);}
+  .lead{font-size:1.05rem;color:var(--muted);}
+  .toc{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 26px;margin:1.2em 0;}
+  .toc ol{margin:.4em 0 .2em;padding-left:1.4em;}
+  .toc a{color:#8fd3ff;}
+  .flow{background:var(--panel);border:1px dashed var(--accent);border-radius:10px;padding:14px 18px;font:14px Consolas,monospace;white-space:pre;overflow-x:auto;color:#cfe8cf;line-height:1.5;}
+  .tag{display:inline-block;background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:.05em .45em;font:.86em Consolas,monospace;color:var(--accent2);}
+  .qa{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:.7em 1.1em;margin:.8em 0;}
+  .qa b{color:var(--accent2);}
+  .com{color:#6b7a8c;font-style:normal;} /* комментарии в yaml */
+  hr{border:none;border-top:1px solid var(--border);margin:2.2em 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>MythicShields — Вики</h1>
+<p class="lead"><strong>MythicShields</strong> — аддон для <a href="https://mythiccraft.io/">MythicMobs</a>, добавляющий полноценную механику щитов для кастомных предметов: настоящий <code>isBlocking() == true</code> в Minecraft, резисты по типам урона, прочность/ресурс, регенерацию и кулдауны.</p>
+
+<div class="toc">
+<strong style="color:var(--accent)">Содержание</strong>
+<ol>
+  <li><a href="#install">Установка</a></li>
+  <li><a href="#mech">Как работает механика</a></li>
+  <li><a href="#setup">Настройка щита в предмете</a></li>
+  <li><a href="#opts">Справочник опций</a></li>
+  <li><a href="#resource">Типы ресурса</a></li>
+  <li><a href="#break">Поломка щита</a></li>
+  <li><a href="#resist">Резисты по типам урона</a></li>
+  <li><a href="#skills">Скиллы щита: ~onTakedShieldDamage</a></li>
+  <li><a href="#expr">Арифметические выражения</a></li>
+  <li><a href="#config">Глобальный config.yml аддона</a></li>
+  <li><a href="#cmd">Команды и права</a></li>
+  <li><a href="#examples">Примеры готовых щитов</a></li>
+  <li><a href="#faq">Частые вопросы (FAQ)</a></li>
+</ol>
+</div>
+
+<!-- ============ 1 ============ -->
+<h2 id="install">1. Установка</h2>
+<ol>
+  <li>Установите <strong>MythicMobs</strong> (5.6+).</li>
+  <li>Положите <code>MythicShields-1.0.0.jar</code> в папку <code>plugins/</code>.</li>
+  <li>Перезапустите сервер. Аддон подхватится как зависимость MythicMobs.</li>
+</ol>
+<p>Требования: Java 21, Paper 1.21.5+ (для <code>Mode: COMPONENT</code>; <code>VANILLA_SWAP</code> работает и на 1.21.4).</p>
+<blockquote>Настройка щитов идёт через <code>plugins/MythicMobs/Items/*.yml</code> (секция <code>Shield:</code> прямо в предмете) <strong>и/или</strong> через собственные файлы аддона <code>plugins/MythicShields/Items/*.yml</code> — там же включается автосоответствие предметам по <code>Match.*</code>, если предмет выдан не MythicMobs.</blockquote>
+
+<!-- ============ 2 ============ -->
+<h2 id="mech">2. Как работает механика</h2>
+
+<h3>2.1. <code>Mode: COMPONENT</code> (по умолчанию, Paper 1.21.5+)</h3>
+<p>Кастомный предмет (Echo Shard, меч, любой материал + <code>CustomModelData</code>) <strong>сам становится настоящим ванильным щитом</strong> через компонент <code>blocks_attacks</code>:</p>
+<div class="flow">Аддон обнаруживает зарегистрированный щит в руках/инвентаре
+(по клику, смене слота, входу, подбору) и один раз навешивает
+компонент minecraft:blocks_attacks
+        │
+        ▼
+Игрок зажимает ПКМ → предмет в руке НАСТОЯЩИЙ щит:
+анимация поднятия, задержка блока, звуки, isBlocking() == true
+        │
+        ▼
+Правила урона (резисты, ProtectFrom, прочность, ресурс) применяет аддон
+своим конфигом — предмет НИКОГДА не подменяется</div>
+<p>Параметры компонента настраиваются в секции <code>Shield.Component:</code> (см. ниже). По умолчанию <code>Component</code> полностью «ванилен»: задержка блока 0.25 сек., звуки ванильные, отключение оружием со стандартным масштабом, правило снижения урона предметом отключено (урон считает аддон).</p>
+
+<h3>2.2. <code>Mode: VANILLA_SWAP</code> (для 1.21.4 и ниже)</h3>
+<p>Старая механика hand-swap: предмет временно заменяется на vanilla <code>SHIELD</code>, при отпускании возвращается. Внешний вид при блоке теряется, но механика работает.</p>
+
+<!-- ============ 3 ============ -->
+<h2 id="setup">3. Настройка щита в предмете</h2>
+<p>Добавьте секцию <code>Shield:</code> в любой предмет MythicMobs в <code>plugins/MythicMobs/Items/</code>. Nexo-аналог <code>iron_sword_shield</code> (Echo Shard + CustomModelData) выглядит так:</p>
+
+<pre class="yaml"><code>BladeShield:
+  Id: ECHO_SHARD
+  Display: '&lt;gold&gt;Короткий клинок - щит&lt;/gold&gt;'
+  Lore:
+  - '&lt;gray&gt;Зажми ПКМ, чтобы блокировать.&lt;/gray&gt;'
+  Shield:
+    Enabled: true
+    Mode: COMPONENT            <span class="com"># предмет сам блокирует как ванильный щит (Paper 1.21.5+)</span>
+
+    Durability:
+      Max: '80'                <span class="com"># максимум прочности</span>
+      CostPerBlock: '2'        <span class="com"># расход за каждый заблокированный удар</span>
+      BreakThreshold: 0        <span class="com"># при &lt;= этого значения щит ломается</span>
+      OnBreak: STAY_BROKEN     <span class="com"># что происходит при поломке</span>
+
+    Blocking:
+      DamageReduction: 0.35    <span class="com"># -35% урона при блокировке</span>
+      DamageMultiplier: 0.9    <span class="com"># итоговый урон * 0.9</span>
+      KnockbackResistance: 0.7
+      Resistances:
+        PROJECTILE: 0.5        <span class="com"># -50% урона снарядами при блокировке</span>
+        ENTITY_ATTACK: 0.4
+
+    Regen:
+      Amount: '1'              <span class="com"># +1 прочности за тик регенерации</span>
+      Interval: 60             <span class="com"># каждые 60 тиков</span>
+      DelayAfterBlock: 40      <span class="com"># задержка после последнего блока (тики)</span>
+      RegenWhileBlocking: false
+
+    RaiseCooldown:
+      Ticks: 40                <span class="com"># кулдаун на поднятие после опускания</span>
+      OnBreakTicks: 100        <span class="com"># кулдаун после поломки</span>
+      Message: '&amp;cЩит ещё не готов! (&amp;e{time} &amp;cсек.)'</code></pre>
+
+<p>Ничего из <code>Component</code> обычно указывать не нужно — по умолчанию он почти ванилен (звуки ванильные, правила урона у компонента нулевые, урон контролирует аддон). <strong>Задержка активации блока по умолчанию 0</strong> — щит встаёт мгновенно. Если нужен ванильный «разгон» щита, задайте <code>BlockDelaySeconds: 0.25</code>. Настроить можно так:</p>
+
+<pre class="yaml"><code>    Component:
+      BlockDelaySeconds: 0.0    <span class="com"># 0 = щит активен сразу; ванильное значение — 0.25 сек.</span>
+      DisableCooldownScale: 1.0 <span class="com"># масштаб кулдауна от оружия с weapon.disable_blocking_for_seconds (0 = нельзя сломать оружием)</span>
+      BlockSound: item.shield.block
+      DisableSound: item.shield.break
+      BypassedBy: '#minecraft:bypasses_shield' <span class="com"># тег урона, пробивающий щит</span>
+      ItemDamage:               <span class="com"># расход прочности ПРЕДМЕТА ванилью</span>
+        Threshold: 0
+        Base: 0
+        Factor: 0               <span class="com"># 0 = ваниль не тратит прочность предмета</span>
+      DamageReductions:         <span class="com"># встроенные в предмет правила снижения урона (по умолчанию пусто!)</span>
+        - Base: 0
+          Factor: 0.5           <span class="com"># пример: ваниль съедает половину снарядов</span>
+          Angle: 90
+          Type: '#minecraft:is_projectile'</code></pre>
+
+<blockquote>Если задаёте <code>Component.DamageReductions</code>, помните о двойном снижении: сначала ванильный компонент урежет урон, потом свои правила применит аддон. По умолчанию список пуст, и урон полностью контролируют опции <code>Blocking.*</code>.</blockquote>
+
+<h3><code>Mode</code></h3>
+<table>
+<tr><th>Значение</th><th>Поведение</th></tr>
+<tr><td><code>COMPONENT</code><br><span class="com">(по умолчанию)</span></td><td>Предмет сам становится настоящим щитом через ванильный компонент <code>blocks_attacks</code>; предмет никогда не подменяется, модель/имя всегда видны. Требует Paper 1.21.5+</td></tr>
+<tr><td><code>VANILLA_SWAP</code></td><td>Старая механика hand-swap: предмет на время блока заменяется на vanilla <code>SHIELD</code> (для 1.21.4 и ниже)</td></tr>
+</table>
+
+<p>Аддон определяет предмет в руке по PDC-ключу <code>mythicmobs:item_id</code> — MythicMobs сам проставляет его своим предметам, поэтому выданные MM предметы распознаются автоматически.</p>
+
+<p>Предметы без MM-ключей (Nexo, выданные вручную, из креатива) распознаются двумя путями:</p>
+<ul>
+<li>Команда <code>/mythicshields bind &lt;id&gt;</code> — привязать предмет в руке к щиту вручную;</li>
+<li><strong>Автосоответствие <code>Match.*</code></strong> — файл <code>plugins/MythicShields/Items/&lt;имя&gt;.yml</code>:</li>
+</ul>
+<pre class="yaml"><code>BladeShield:
+  Match:
+    Material: ECHO_SHARD      <span class="com"># материал предмета (обязателен либо CustomModelData)</span>
+    CustomModelData: 10000    <span class="com"># и/или CustomModelData предмета (число)</span>
+  <span class="com"># ...далее та же структура, что и секция Shield в MM-предмете:</span>
+  Durability:
+    Max: '80'
+    CostPerBlock: '2'
+  Blocking:
+    DamageReduction: 0.35
+    Resistances:
+      PROJECTILE: 0.5
+  Regen:
+    Amount: '1'
+    Interval: 60
+    DelayAfterBlock: 40</code></pre>
+<p>Предмет, который попадает под <code>Match</code>, аддон находит сам при любом появлении в инвентаре.</p>
+<p><strong>Автовывод из MM-предмета:</strong> если предмет в <code>plugins/MythicMobs/Items/*.yml</code> задан с <code>Id:</code>/​<code>Material:</code> и <code>CustomModelData</code>, аддон выводит Match сам — отдельно задавать ничего не нужно (MM PDC-ключ тоже подхватывается, проверяются все ключи namespace <code>mythicmobs</code>).</p>
+
+<!-- ============ 4 ============ -->
+<h2 id="opts">4. Справочник опций</h2>
+
+<h3><code>Durability</code></h3>
+<table>
+<tr><th>Опция</th><th>По умолчанию</th><th>Описание</th></tr>
+<tr><td><code>Max</code></td><td>100</td><td>Максимальная прочность щита. Прочность хранится между подъёмами — регенерация восстанавливает её и вне блока</td></tr>
+<tr><td><code>CostPerBlock</code></td><td>2</td><td>Расход за каждый заблокированный удар</td></tr>
+<tr><td><code>BreakThreshold</code></td><td>0</td><td>При прочности &lt;= значения щит ломается</td></tr>
+<tr><td><code>OnBreak</code></td><td>STAY_BROKEN</td><td>Действие при поломке: <code>STAY_BROKEN</code>, <code>VANISH</code> (алиас <code>BREAK_ITEM</code>), <code>DROP_TO_INVENTORY</code>, <code>REPAIR</code></td></tr>
+</table>
+
+<h3><code>Blocking</code></h3>
+<table>
+<tr><th>Опция</th><th>По умолчанию</th><th>Описание</th></tr>
+<tr><td><code>DamageReduction</code></td><td>0.3</td><td>Доля урона, вычитаемая при блокировке (0.3 = -30%). Не работает при включённом <code>ResistDecay</code></td></tr>
+<tr><td><code>ResistDecay</code></td><td>—</td><td>Динамический резист (см. <a href="#resist">раздел 7</a>): резист спадает со 100% до минимума по мере удержания блока</td></tr>
+<tr><td><code>DamageMultiplier</code></td><td>1.0</td><td>Итоговый урон умножается на значение</td></tr>
+<tr><td><code>KnockbackResistance</code></td><td>0.5</td><td>Сопротивление отдаче при блокировке (0..1)</td></tr>
+<tr><td><code>ProtectFrom</code></td><td>ALL</td><td>От чего щит защищает: <code>ALL</code> — от всего, либо список типов урона (<code>ENTITY_ATTACK</code>, <code>PROJECTILE</code>, ...). Незащищённый урон проходит целиком, прочность за него не тратится</td></tr>
+<tr><td><code>IgnoreTypes</code></td><td>—</td><td>Типы урона, которые <strong>всегда</strong> пробивают щит целиком, даже при <code>ALL</code></td></tr>
+<tr><td><code>Resistances</code></td><td>—</td><td>Секции по типам урона (см. <a href="#resist">раздел 7</a>)</td></tr>
+</table>
+
+<h3><code>Regen</code></h3>
+<table>
+<tr><th>Опция</th><th>По умолчанию</th><th>Описание</th></tr>
+<tr><td><code>Amount</code></td><td>0.5</td><td>Восстановление за тик регенерации</td></tr>
+<tr><td><code>Interval</code></td><td>40</td><td>Период регенерации (в тиках)</td></tr>
+<tr><td><code>DelayAfterBlock</code></td><td>60</td><td>Задержка после последнего блока (в тиках)</td></tr>
+<tr><td><code>RegenWhileBlocking</code></td><td>false</td><td>Регенерировать даже при зажатой блокировке</td></tr>
+</table>
+
+<h3><code>RaiseCooldown</code></h3>
+<table>
+<tr><th>Опция</th><th>По умолчанию</th><th>Описание</th></tr>
+<tr><td><code>Ticks</code></td><td>0</td><td>Кулдаун, который начисляется <strong>в момент опускания щита</strong> (отпустил ПКМ → щит сразу на КД). Пока он идёт, <code>blocks_attacks</code> снят с предмета: щит физически не блокирует, а на предмете в руке виден ванильный откат. По окончании компонент возвращается автоматически (0 = без кулдауна). Заменяет старую систему AntiSpam</td></tr>
+<tr><td><code>OnBreakTicks</code></td><td>100</td><td>Кулдаун после поломки щита</td></tr>
+<tr><td><code>Message</code></td><td>—</td><td>Сообщение при попытке поднять на кулдауне. <code>{time}</code> = оставшиеся секунды</td></tr>
+</table>
+<blockquote><code>RaiseCooldown.AntispamTicks</code> больше не используется. Если он остался в старом конфиге, аддон прочитает его как обычный <code>RaiseCooldown.Ticks</code> (при условии, что <code>Ticks</code> не задан явно).</blockquote>
+
+<h3><code>Resource</code> (см. <a href="#resource">раздел 5</a>)</h3>
+<table>
+<tr><th>Опция</th><th>По умолчанию</th><th>Описание</th></tr>
+<tr><td><code>Type</code></td><td>DURABILITY</td><td><code>DURABILITY</code>, <code>HP</code>, <code>VARIABLE</code></td></tr>
+<tr><td><code>Variable</code></td><td>—</td><td>Имя переменной (для <code>VARIABLE</code>)</td></tr>
+<tr><td><code>Cost</code></td><td>1</td><td>Расход за каждый блок</td></tr>
+<tr><td><code>MinResource</code></td><td>1</td><td>Минимум ресурса для блокировки</td></tr>
+<tr><td><code>RequireOnBlock</code></td><td>true</td><td>Опускать щит, когда ресурс &lt; MinResource</td></tr>
+</table>
+
+<!-- ============ 5 ============ -->
+<h2 id="resource">5. Типы ресурса</h2>
+
+<h3><code>DURABILITY</code> (по умолчанию)</h3>
+<p>Прочность хранится внутриаддонно. Поломка при <code>Durability.BreakThreshold</code>.</p>
+
+<h3><code>HP</code></h3>
+<p>Расход при блокировке — здоровье игрока. Не опускается ниже 1.0.</p>
+
+<h3><code>VARIABLE</code></h3>
+<p>Расход — значение переменной, хранящейся в PDC игрока:</p>
+<pre class="yaml"><code>    Resource:
+      Type: VARIABLE
+      Variable: shield_resource
+      Cost: '1'
+      MinResource: '1'
+      RequireOnBlock: true</code></pre>
+
+<!-- ============ 6 ============ -->
+<h2 id="break">6. Поломка щита</h2>
+<p>При <code>Durability.OnBreak</code>:</p>
+<table>
+<tr><th>Значение</th><th>Что происходит</th></tr>
+<tr><td><code>STAY_BROKEN</code></td><td>Щит опускается, стамина восстанавливается; щит недоступен кулдаун <code>RaiseCooldown.OnBreakTicks</code>, после чего работает как новый</td></tr>
+<tr><td><code>VANISH</code> <span class="com">(алиас <code>BREAK_ITEM</code>)</span></td><td>Предмет уничтожается; дается кулдаун <code>RaiseCooldown.OnBreakTicks</code></td></tr>
+<tr><td><code>DROP_TO_INVENTORY</code></td><td>Предмет безопасно возвращается в инвентарь; дается кулдаун</td></tr>
+<tr><td><code>REPAIR</code></td><td>Прочность восстанавливается до Max; щит недоступен <code>RaiseCooldown.OnBreakTicks</code>, потом работает как новый</td></tr>
+</table>
+<p>В любом случае звучит звук <code>ENTITY_ITEM_BREAK</code> и ставится кулдаун на поднятие.</p>
+
+<!-- ============ 7 ============ -->
+<h2 id="resist">7. Резисты по типам урона</h2>
+<p>Секция <code>Blocking.Resistances</code> принимает ключи = имена <code>EntityDamageEvent.DamageCause</code>:</p>
+<table>
+<tr><th>Ключ</th><th>Тип урона</th></tr>
+<tr><td><code>ENTITY_ATTACK</code></td><td>Атака сущности</td></tr>
+<tr><td><code>PROJECTILE</code></td><td>Снаряд (стрела, трезубец и т.п.)</td></tr>
+<tr><td><code>ENTITY_EXPLOSION</code></td><td>Взрыв (крип)</td></tr>
+<tr><td><code>BLOCK_EXPLOSION</code></td><td>Взрыв блока (TNT)</td></tr>
+<tr><td><code>FIRE</code> / <code>FIRE_TICK</code></td><td>Огонь</td></tr>
+<tr><td><code>LAVA</code></td><td>Лава</td></tr>
+<tr><td><code>LIGHTNING</code></td><td>Молния</td></tr>
+<tr><td><code>MAGIC</code></td><td>Магический урон</td></tr>
+<tr><td><code>DRAGON_BREATH</code></td><td>Дыхание дракона</td></tr>
+<tr><td><code>FALL</code></td><td>Падение</td></tr>
+</table>
+<p>Полный список — <code>EntityDamageEvent.DamageCause</code> в javadocs Bukkit.</p>
+
+<pre class="yaml"><code>      Resistances:
+        PROJECTILE: 0.5
+        ENTITY_ATTACK: 0.4
+        MAGIC: 0.0        <span class="com"># магический урон проходит полностью</span></code></pre>
+
+<p>Резист применяется к урону <strong>до</strong> общего <code>DamageMultiplier</code>.</p>
+
+<h3>Уточнение скоупа защиты</h3>
+<p>По умолчанию щит защищает <strong>от всего</strong>. Двумя опциями можно сузить или ослабить защиту:</p>
+<pre class="yaml"><code>    Blocking:
+      ProtectFrom:            <span class="com"># щит защищает ТОЛЬКО от перечисленного</span>
+        - ENTITY_ATTACK
+        - PROJECTILE
+        - ENTITY_EXPLOSION
+      IgnoreTypes:            <span class="com"># но MAGIC всегда проходит целиком</span>
+        - MAGIC</code></pre>
+<ul>
+  <li>Урон, от которого щит <strong>не</strong> защищает (<code>ProtectFrom</code> выбран списком, тип не указан), проходит в полном объёме, прочность за него не тратится, щит остаётся поднят.</li>
+  <li><code>IgnoreTypes</code> работает и при <code>ProtectFrom: ALL</code>, и поверх <code>Resistances</code>.</li>
+</ul>
+
+<h3>Динамический резист: <code>Blocking.ResistDecay</code></h3>
+<p>Логика ванильного «старта с полного блока»: при поднятии щита резист максимальный (по умолчанию 100% урона блокируется), затем <strong>каждый тик удержания</strong> резист линейно спадает до минимума, который достигается за указанное время:</p>
+<pre class="yaml"><code>    Blocking:
+      ResistDecay:
+        Enabled: true
+        Start: 1.0     <span class="com"># резист при поднятии щита (1.0 = 100% урона блокируется)</span>
+        Min: 0.2       <span class="com"># минимальный резист при долгом удержании (20%)</span>
+        Seconds: 5     <span class="com"># за сколько секунд удержания резист доходит до Min</span></code></pre>
+<ul>
+  <li>Спад считается непрерывно по времени удержания: спустя 2.5 секунды из 5 удержания резист будет ровно посередине между <code>Start</code> и <code>Min</code>.</li>
+  <li>Отпустил блок → поднял снова: резист снова <code>Start</code> (100%).</li>
+  <li>Пер-типовые <code>Resistances</code> имеют приоритет над спадом (как и раньше — переопределяют общий резист).</li>
+  <li><code>Min: 1.0</code> — вырожденный случай: постоянный полный блок, как у ванильного щита.</li>
+  <li>При включённом <code>ResistDecay</code> статичный <code>DamageReduction</code> не используется.</li>
+</ul>
+<p>Стамина (<code>DURABILITY</code> / <code>Resource</code>) всё так же расходуется за каждый заблокированный удар; при её поломке щит <strong>опускается и уходит в кулдаун</strong> (<code>STAY_BROKEN</code> по умолчанию), после чего стамина уже восстановлена.</p>
+
+<!-- ============ 8 ============ -->
+<h2 id="skills">8. Скиллы щита: <code>~onTakedShieldDamage</code> и события</h2>
+
+<p>Щит может запускать скиллы MythicMobs на удар по блоку (с фильтром по <strong>текущему резисту</strong>) и на события жизненного цикла щита. Скиллы перечисляются в <code>Shield.Skills</code> <strong>или</strong> в корневой секции <code>Skills</code> предмета MythicMobs (как обычные MM-item скиллы) — аддон читает оба места и сам отбирает строки по своим триггерам.</p>
+
+<pre class="yaml"><code>BladeShield:
+  Id: ECHO_SHARD
+  CustomModelData: 10000
+  Shield:
+    Enabled: true
+    Blocking:
+      ResistDecay:
+        Enabled: true
+        Start: 1.0        <span class="com"># первые StartTicks тиков резист 100%</span>
+        Min: 0.2          <span class="com"># затем спад до 20% за DelayTicks тиков</span>
+    Skills:
+    - firework @ self ~onTakedShieldDamage{Resistance=1}
+    - particle{particle=crit;amount=40;hspread=1;vspread=1} @self ~onTakedShieldDamage{Resistance=0.2}</code></pre>
+
+<h3>Триггеры</h3>
+
+<table>
+  <tr><th>Триггер</th><th>Когда срабатывает</th><th>Фильтр</th></tr>
+  <tr><td><code>~onTakedShieldDamage</code></td><td>игрок получил удар, который принял щит</td><td><code>{Resistance=X}</code> — по текущему резисту</td></tr>
+  <tr><td><code>~onCrackShield</code></td><td>щит сломался (прочность &lt;= <code>BreakThreshold</code>), в момент <code>OnBreak</code></td><td>—</td></tr>
+  <tr><td><code>~onStartShieldCooldown</code></td><td>начался кулдаун щита <strong>не из-за поломки</strong> (отпустил ПКМ, axe-disable)</td><td>—</td></tr>
+  <tr><td><code>~onFullyShield</code></td><td>щит снова готов: КД закончился <strong>или</strong> прочность восстановилась до <code>Max</code></td><td>—</td></tr>
+</table>
+
+<pre class="yaml"><code>Skills:
+- sound{s=item.shield.block;p=0.8} @self ~onTakedShieldDamage
+- sound{s=block.anvil.land;p=0.6} @self ~onCrackShield
+- particle{particle=smoke;amount=15} @self ~onCrackShield
+- sound{s=block.note_block.bass;p=0.5} @self ~onStartShieldCooldown
+- sound{s=block.amethyst_block.chime;p=1.2} @self ~onFullyShield
+- particle{particle=happy_villager;amount=10} @self ~onFullyShield</code></pre>
+
+<blockquote>Звуки щита по умолчанию <strong>выключены</strong>: аддон больше не проигрывает своих звуков (поднятие, опускание, блок, поломка) и не задаёт <code>BlockSound</code>/<code>DisableSound</code> ванильному компоненту. Всё озвучивание — через скиллы выше. Если нужен ванильный звук блока от компонента, верните его вручную: <code>Component.BlockSound: item.shield.block</code>.</blockquote>
+
+<p>В <code>Skills</code> можно писать <strong>две вещи</strong>:</p>
+<ol>
+  <li><strong>Имя скилла</strong> из <code>plugins/MythicMobs/Skills/*.yml</code> — аддон найдёт его через SkillManager и выполнит;</li>
+  <li><strong>Inline-механику</strong> — обычную строку MythicMobs (<code>particle{...}</code>, <code>sound{...}</code>, <code>skill{s=...}</code> и т. п.). Аргументы в фигурных скобках не трогаются, удаляется только сам триггер с его фильтром.</li>
+</ol>
+
+<p>Именованный скилл выглядит так (в <code>plugins/MythicMobs/Skills/*.yml</code>):</p>
+
+<pre class="yaml"><code>ShieldBang:
+  Skills:
+  - sound{s=block.enchantment_table.use;p=1.4} @ self
+  - damage{amount=3} @ entitiesInRadius{r=4;viewers=self}</code></pre>
+
+<h3>Как читается строка скилла</h3>
+
+<table>
+  <tr><th>Часть</th><th>Значение</th></tr>
+  <tr><td><code>firework</code> / <code>particle{...}</code></td><td>Имя скилла MythicMobs <strong>или</strong> inline-механика</td></tr>
+  <tr><td><code>@ self</code></td><td>Цель. <code>@self</code> (по умолчанию) — игрок с щитом; <code>@damager</code> / <code>@trigger</code> / <code>@attacker</code> — атакующий</td></tr>
+  <tr><td><code>~onTakedShieldDamage</code></td><td>Триггер: удар, принятый щитом (см. таблицу триггеров выше)</td></tr>
+  <tr><td><code>{Resistance=1}</code></td><td>Фильтр резиста (<code>Resistance</code>/<code>Resist</code>). Значения &gt;1 трактуются как проценты: <code>20</code> = <code>0.2</code></td></tr>
+</table>
+
+<p><b>Как сопоставляется резист:</b></p>
+<ul>
+  <li><code>Resistance=1</code> (или <code>100</code>) — удар <strong>полностью поглощён</strong> щитом (итоговый урон 0) либо текущий резист ровно 100%. Это удобный «удар в полный блок».</li>
+  <li>Любое другое значение — точное совпадение с текущим резистом (±0.005). Например, при <code>Blocking.DamageReduction: 0.35</code> нужен <code>{Resistance=0.35}</code>; при <code>ResistDecay</code> минимум <code>0.2</code> даёт <code>{Resistance=0.2}</code>.</li>
+</ul>
+
+<pre class="yaml"><code>Skills:
+- скилл1 @ self ~onTakedShieldDamage{Resistance=1}     <span class="com"># удар полностью заблокирован</span>
+- скилл2 @ self ~onTakedShieldDamage{Resistance=0.2}   <span class="com"># удар при резисте 20% (дно спада)</span>
+- скилл3 @ self ~onTakedShieldDamage{Resistance=35}    <span class="com"># 0.35, проценты</span></code></pre>
+
+<h3>Правила</h3>
+<ul>
+  <li>Строка без одного из триггеров щита <strong>не выполняется</strong> (защита от случайного запуска).</li>
+  <li><code>Skills</code> можно писать и в <code>Shield:</code>, и в корне предмета — это одно и то же.</li>
+  <li>Фильтр <code>{Resistance=X}</code> можно опустить — скилл стреляет на любом резисте. Для событий <code>onCrackShield</code> / <code>onStartShieldCooldown</code> / <code>onFullyShield</code> фильтр не используется.</li>
+  <li>Кастер и цель — сам игрок (MythicMobs-профиль игрока работает как SkillCaster), поэтому механики могут ссылаться на <code>&lt;caster&gt;</code>, <code>@self</code>, <code>@cone</code> и т. д.</li>
+  <li>В метадату скилла пишется текущий резист: доступен через <code>&lt;skill.metadata.shield_resist&gt;</code>, урон удара — <code>&lt;skill.metadata.shield_damage&gt;</code>.</li>
+  <li>Дедуп: за один тик (30 мс) скиллы стреляют не более одного раза, даже если удар обработали два обработчика аддона.</li>
+  <li>Триггер регистрируется в MythicMobs при старте аддона (запись в лог «Триггер ~onTakedShieldDamage зарегистрирован»).</li>
+  <li>При <code>Debug: true</code> каждый пропуск по фильтру пишется в лог с фактическим резистом — удобно, чтобы подобрать <code>Resistance</code> под свой щит:<br><code>Скилл щита пропущен: Resistance=1.000, фактический резист 0.350 — строка: ...</code></li>
+</ul>
+
+<!-- ============ 9 ============ -->
+<h2 id="expr">9. Арифметические выражения</h2>
+<p>Все значения могут быть арифметикой: <code>80 + tier * 20</code>, <code>(100 - damage) / 2</code>. Поддерживаются <code>+ - * /</code> и скобки. При ошибке вычисления используется значение по умолчанию и пишется запись в лог (<code>Debug: true</code>).</p>
+
+<!-- ============ 9 ============ -->
+<h2 id="config">10. Глобальный config.yml аддона</h2>
+<p><code>plugins/MythicShields/config.yml</code> — <strong>только</strong> глобальные значения по умолчанию (применяются, если опция не задана в предмете) и отладка:</p>
+
+<pre class="yaml"><code>Debug: false
+
+Defaults:
+  Durability:
+    Max: 100
+    CostPerBlock: 2
+    BreakThreshold: 0
+    OnBreak: STAY_BROKEN
+  Regen:
+    Amount: 0.5
+    Interval: 40
+    DelayAfterBlock: 60
+    RegenWhileBlocking: false
+  RaiseCooldown:
+    Ticks: 0
+    OnBreakTicks: 100
+    Message: '&amp;cЩит ещё не готов! (&amp;e{time} &amp;cсек.)'
+  Blocking:
+    DamageReduction: 0.3
+    DamageMultiplier: 1.0
+    KnockbackResistance: 0.5
+
+Messages:
+  Prefix: '&amp;8[&amp;6MythicShields&amp;8]&amp;r '</code></pre>
+
+<p>Логи: <code>plugins/MythicShields/logs/mythicshields.log</code>.</p>
+
+<!-- ============ 10 ============ -->
+<h2 id="cmd">11. Команды и права</h2>
+<table>
+<tr><th>Команда</th><th>Описание</th></tr>
+<tr><td><code>/mythicshields reload</code></td><td>Перезагрузить config.yml и все предметы MythticMobs</td></tr>
+<tr><td><code>/mythicshields list</code></td><td>Список загруженных щитов (с режимами)</td></tr>
+<tr><td><code>/mythicshields apply</code></td><td>Надеть компонент <code>blocks_attacks</code> на предмет в главной руке (если предмет распознан как щит)</td></tr>
+<tr><td><code>/mythicshields bind &lt;id&gt;</code></td><td>Привязать предмет в главной руке к щиту <code>&lt;id&gt;</code> и сразу надеть компонент. Для предметов, выданных не MythicMobs (Nexo и т.п.)</td></tr>
+<tr><td><code>/mythicshields unbind</code></td><td>Убрать привязку с предмета в руке</td></tr>
+</table>
+<p>Право: <span class="tag">mythicshields.admin</span></p>
+
+<!-- ============ 11 ============ -->
+<h2 id="examples">12. Примеры готовых щитов</h2>
+
+<h3>Меч с блокировкой на прочности</h3>
+<pre class="yaml"><code>BastionShield:
+  Id: NETHERITE_SWORD
+  Display: '&lt;gold&gt;Бастион&lt;/gold&gt;'
+  Shield:
+    Enabled: true
+    Durability:
+      Max: '80'
+      CostPerBlock: '2'
+      BreakThreshold: 0
+      OnBreak: STAY_BROKEN
+    Blocking:
+      DamageReduction: 0.35
+      Resistances:
+        PROJECTILE: 0.5
+      KnockbackResistance: 0.7
+    Regen:
+      Amount: '1'
+      Interval: 60
+      DelayAfterBlock: 40
+      RegenWhileBlocking: false
+    RaiseCooldown:
+      Ticks: 40
+      OnBreakTicks: 100
+      Message: '&amp;cЩит ещё не готов! (&amp;e{time} &amp;cсек.)'</code></pre>
+
+<h3>Усиливающий щит на HP</h3>
+<pre class="yaml"><code>BloodShield:
+  Id: SHIELD
+  Display: '&lt;dark_red&gt;Кровавый щит&lt;/dark_red&gt;'
+  Shield:
+    Enabled: true
+    Resource:
+      Type: HP
+      Cost: '1'
+    Blocking:
+      DamageReduction: 0.6
+      Resistances:
+        FIRE: 0.8
+        MAGIC: 0.0
+      KnockbackResistance: 1.0</code></pre>
+
+<h3>Тотем с запасом ресурса</h3>
+<pre class="yaml"><code>TotemStamina:
+  Id: TOTEM_OF_UNDYING
+  Display: '&lt;aqua&gt;Тотем выносливости&lt;/aqua&gt;'
+  Shield:
+    Enabled: true
+    Resource:
+      Type: VARIABLE
+      Variable: shield_resource
+      Cost: '5'
+      MinResource: '10'
+      RequireOnBlock: true
+    Blocking:
+      DamageReduction: 0.2
+      DamageMultiplier: 0.8
+      KnockbackResistance: 0.3
+    Durability:
+      Max: '50'
+      CostPerBlock: '5'
+      OnBreak: REPAIR</code></pre>
+
+<!-- ============ 12 ============ -->
+<h2 id="faq">13. Частые вопросы (FAQ)</h2>
+
+<div class="qa"><b>Q: Блокировка не активируется.</b><br>A: Диагностика по шагам:
+<ol>
+<li><code>Debug: true</code> в <code>plugins/MythicShields/config.yml</code>, перезапустите сервер.</li>
+<li>Возьмите предмет в руку и выполните <code>/mythicshields apply</code>. Если ответ «предмет не распознан» — предмет выдан не MythicMobs: выполните <code>/mythicshields bind &lt;id&gt;</code> (id из <code>/mythicshields list</code>).</li>
+<li>Если bind применился, а блок всё равно не поднимается — переключите слот в горячей панели и обратно.</li>
+<li>Смотрите <code>logs/mythicshields.log</code>: строка <code>blocks_attacks применён к предмету щита ...</code> — компонент на предмете.</li>
+<li>Проверьте: <code>Shield.Enabled: true</code>; сервер Paper 1.21.5+ для режима <code>COMPONENT</code> (иначе ставьте <code>Mode: VANILLA_SWAP</code>).</li>
+</ol></div>
+
+<div class="qa"><b>Q: Предмет в руке не показывает блокирлекательную анимацию, когда я его только что получил.</b><br>A: Компонент <code>blocks_attacks</code> надевается на предмет, как только он замечен аддоном (вход в игру, смена слота, подбор, клик ПКМ). Первый зажатый ПКМ после выдачи предмета может пройти без анимации — уже со второго всё нативно. Если хочется 100% сразу — возьмите предмет в руку и поменяйте слот туда-обратно.</div>
+
+<div class="qa"><b>Q: Условие <code>blocking</code> в MythicMobs не срабатывает.</b><br>A: В режиме <code>COMPONENT</code> предмет стал настоящим щитом, <code>isBlocking()</code> работает нативно, поэтому <code>?blocking</code> и условие <code>blocking</code> работают. Проверьте <code>Debug: true</code>.</div>
+
+<div class="qa"><b>Q: Как изменить скорость регенерации?</b><br>A: <code>Regen.Interval</code> (период) и <code>Regen.Amount</code> (сколько за период). Задержка после блока — <code>Regen.DelayAfterBlock</code>.</div>
+
+<div class="qa"><b>Q: Можно ли задать резист только для одного типа урона?</b><br>A: Да — укажите нужные ключи в <code>Blocking.Resistances</code>. Не указанные типы получают общий <code>DamageReduction</code>.</div>
+
+<div class="qa"><b>Q: Кулдаун общий для всех щитов?</b><br>A: Кулдаун индивидуален для каждого игрока, но не различает предметы. При попытке поднять любой щит на кулдауне сработает его сообщение.</div>
+
+</div>
+</body>
+</html>
+

@@ -1,0 +1,10 @@
+name: MythicShields
+version: '1.0.0'
+main: io.mythicshields.MythicShieldsPlugin
+api-version: '1.20'
+depend: [MythicMobs]
+softdepend: [MythicCrucible]
+commands:
+  mythicshields:
+    description: MythicShields admin command
+    usage: /<command> [reload|list]

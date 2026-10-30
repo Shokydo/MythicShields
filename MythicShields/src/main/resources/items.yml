@@ -1,0 +1,28 @@
+# Пример конфигурации щитов MythicShields
+# Этот файл читается так же, как предметы MythicMobs (секция Shield внутри предмета).
+BastionShield:
+  Id: SHIELD
+  Display: '<gold>Бастион</gold>'
+  Shield:
+    Enabled: true
+    Durability:
+      Max: 80
+      CostPerBlock: 2
+      BreakThreshold: 0
+      OnBreak: STAY_BROKEN
+    Regen:
+      Amount: 1
+      Interval: 60
+      DelayAfterBlock: 40
+      RegenWhileBlocking: false
+    RaiseCooldown:
+      Ticks: 40
+      OnBreakTicks: 100
+      Message: '&cЩит ещё не готов! (&e{time} &cсек.)'
+    Blocking:
+      DamageReduction: 0.35
+      Resistances:
+        PROJECTILE: 0.5
+        ENTITY_ATTACK: 0.4
+      DamageMultiplier: 0.9
+      KnockbackResistance: 0.7

@@ -1,0 +1,17 @@
+io\mythicshields\model\ShieldConfig.class
+io\mythicshields\service\ShieldLog.class
+io\mythicshields\util\Expr$Parser.class
+io\mythicshields\model\ShieldConfig$OnBreak.class
+io\mythicshields\service\ComponentService.class
+io\mythicshields\MythicShieldsPlugin.class
+io\mythicshields\model\ShieldConfig$ResourceType.class
+io\mythicshields\model\ShieldConfig$DamageReductionSpec.class
+io\mythicshields\model\ShieldConfig$Mode.class
+io\mythicshields\service\SkillBridge.class
+io\mythicshields\util\Expr.class
+io\mythicshields\model\ShieldConfig$BlockingComponent.class
+io\mythicshields\registry\ShieldRegistry.class
+io\mythicshields\command\ShieldCommand.class
+io\mythicshields\service\BlockingService$1.class
+io\mythicshields\service\SkillBridge$ParsedSkill.class
+io\mythicshields\service\BlockingService.class
