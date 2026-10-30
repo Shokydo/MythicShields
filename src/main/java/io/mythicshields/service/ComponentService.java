@@ -33,6 +33,7 @@ import org.bukkit.persistence.PersistentDataType;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Mode = COMPONENT: предмет сам делает предмет настоящим ванильным щитом.
@@ -58,6 +59,19 @@ public final class ComponentService implements Listener {
     }
 
     /* ------------------------------------------------------- API */
+
+    /**
+     * Накладывает компонент на временный ванильный щит в режиме VANILLA_SWAP.
+     * Нужен в том числе для отключения стандартных звуков ванильного щита.
+     */
+    public void applyTemporaryShieldComponent(ItemStack item, ShieldConfig cfg) {
+        if (item == null || cfg == null) return;
+        try {
+            item.setData(DataComponentTypes.BLOCKS_ATTACKS, build(cfg));
+        } catch (Throwable t) {
+            ShieldLog.warn("Не удалось настроить временный щит " + cfg.getItemId() + ": " + t);
+        }
+    }
 
     /**
      * Возвращает конфиг щита для предмета (по собственному PDC-ключу
@@ -126,8 +140,18 @@ public final class ComponentService implements Listener {
     public boolean applyComponentTo(ItemStack item) {
         ShieldConfig cfg = resolve(item);
         if (cfg == null) return false;
-        if (hasComponent(item)) return false;
         try {
+            if (hasComponent(item)) {
+                BlocksAttacks current = item.getData(DataComponentTypes.BLOCKS_ATTACKS);
+                // Items saved by an older plugin version may already have
+                // blocks_attacks with vanilla sounds. Refresh them when sound
+                // settings differ, without rewriting the component each sweep.
+                if (current != null
+                        && Objects.equals(current.blockSound(), componentSound(cfg.component.blockSound))
+                        && Objects.equals(current.disableSound(), componentSound(cfg.component.disableSound))) {
+                    return false;
+                }
+            }
             item.setData(DataComponentTypes.BLOCKS_ATTACKS, build(cfg));
         } catch (Throwable t) {
             ShieldLog.warn("Не удалось применить blocks_attacks к " + cfg.getItemId() + ": " + t);
@@ -234,16 +258,20 @@ public final class ComponentService implements Listener {
             builder.addDamageReduction(rb.build());
         }
 
-        if (comp.blockSound != null && !comp.blockSound.isBlank()) {
-            builder.blockSound(Key.key(comp.blockSound));
-        }
-        if (comp.disableSound != null && !comp.disableSound.isBlank()) {
-            builder.disableSound(Key.key(comp.disableSound));
-        }
+        // The Paper builder inherits vanilla shield sounds when these fields are
+        // omitted. Use Minecraft's no-op sound event by default so every shield
+        // is silent unless its owner explicitly configures a sound.
+        builder.blockSound(componentSound(comp.blockSound));
+        builder.disableSound(componentSound(comp.disableSound));
         if (comp.bypassedBy != null && !comp.bypassedBy.isBlank()) {
             builder.bypassedBy(tagKey(comp.bypassedBy));
         }
         return builder.build();
+    }
+
+    private Key componentSound(String sound) {
+        if (sound == null || sound.isBlank()) return Key.key("minecraft:intentionally_empty");
+        return Key.key(sound.trim());
     }
 
     private RegistryKeySet<DamageType> types(List<String> names) {
