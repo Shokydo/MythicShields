@@ -15,7 +15,6 @@ import org.bukkit.entity.Player;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -58,8 +57,6 @@ public final class SkillBridge {
 
     private final MythicShieldsPlugin plugin;
     private final Map<String, SkillTrigger> triggers = new ConcurrentHashMap<>();
-    /** UUID + триггер -> мс последнего выстрела (дедуп между обработчиками). */
-    private final Map<String, Long> lastFire = new ConcurrentHashMap<>();
     /** строка скилла -> уже предупреждены, что она не разобралась. */
     private final Map<String, Boolean> warnedLines = new ConcurrentHashMap<>();
     /** inline-строка -> разобранный MetaSkill (кэш, чтобы не регистрировать заново на каждый удар). */
@@ -73,8 +70,13 @@ public final class SkillBridge {
     public void register() {
         for (String name : TRIGGERS) {
             try {
-                SkillTrigger tr = SkillTrigger.create(name);
-                tr.register();
+                // Reuse an already registered trigger after a plugin reload instead
+                // of failing on MythicMobs' static trigger registry.
+                SkillTrigger tr = SkillTrigger.get(name);
+                if (tr == null) {
+                    tr = SkillTrigger.create(name);
+                    tr.register();
+                }
                 triggers.put(name, tr);
                 ShieldLog.info("Триггер ~on" + name + " зарегистрирован в MythicMobs");
             } catch (Throwable t) {
@@ -94,13 +96,9 @@ public final class SkillBridge {
     public void fireShieldSkills(Player p, ShieldConfig cfg, double resist, double damage,
                                  Entity damager, boolean fullBlock) {
         if (cfg == null || !cfg.hasSkills()) return;
-        UUID id = p.getUniqueId();
-        String key = id + "|" + TAKED_DAMAGE;
-        long now = System.currentTimeMillis();
-        Long last = lastFire.get(key);
-        if (last != null && now - last < 30) return; // дедуп: урон за тик обрабатывают 2 обработчика
-        lastFire.put(key, now);
-
+        // BlockingService deduplicates the HIGH/MONITOR callbacks by the damage
+        // event object. Do not time-deduplicate here: two separate fast hits must
+        // each run their configured skill.
         run(p, cfg, TAKED_DAMAGE, resist, damage, damager, fullBlock);
     }
 
@@ -110,12 +108,6 @@ public final class SkillBridge {
      */
     public void fireTrigger(Player p, ShieldConfig cfg, String triggerName) {
         if (cfg == null || !cfg.hasSkills()) return;
-        String key = p.getUniqueId() + "|" + triggerName;
-        long now = System.currentTimeMillis();
-        Long last = lastFire.get(key);
-        if (last != null && now - last < 30) return; // защита от двойного вызова
-        lastFire.put(key, now);
-
         run(p, cfg, triggerName, 0.0, 0.0, null, false);
     }
 
@@ -144,6 +136,17 @@ public final class SkillBridge {
         io.lumine.mythic.api.adapters.AbstractEntity self = BukkitAdapter.adapt(p);
         Location origin = p.getLocation();
         SkillTrigger usedTrigger = triggers.get(triggerName);
+        if (usedTrigger == null) {
+            try {
+                usedTrigger = SkillTrigger.get(triggerName);
+            } catch (Throwable ignored) {
+            }
+        }
+        if (usedTrigger == null) {
+            ShieldLog.warn("Триггер ~on" + triggerName + " не зарегистрирован — скилл игрока "
+                    + p.getName() + " пропущен");
+            return;
+        }
 
         for (String rawLine : cfg.skills) {
             ParsedSkill parsed = parseSkillLine(rawLine, triggerName, resist, fullBlock);
@@ -185,19 +188,37 @@ public final class SkillBridge {
         }
     }
 
-    /**
-     * Находит исполняемый скилл: сначала по имени в реестре MythicMobs,
-     * иначе разбирает строку как inline-механику (particle{...} @self и т.п.).
-     */
-    private Skill resolveSkill(io.lumine.mythic.core.skills.SkillExecutor skillManager, ParsedSkill parsed) {
+    private boolean isMechanic(io.lumine.mythic.core.skills.SkillExecutor skillManager, String name) {
+        if (name == null) return false;
         try {
-            var named = skillManager.getSkill(parsed.name());
-            if (named.isPresent()) return named.get();
+            for (String mechanic : skillManager.getMechanics().keySet()) {
+                if (mechanic.equalsIgnoreCase(name)) return true;
+            }
         } catch (Throwable ignored) {
         }
+        return false;
+    }
 
+    /**
+     * Находит исполняемый скилл: сохранённый MetaSkill по имени или inline-строку
+     * (`particle{...} @self` и т.п.).
+     */
+    private Skill resolveSkill(io.lumine.mythic.core.skills.SkillExecutor skillManager, ParsedSkill parsed) {
         Skill cached = inlineCache.get(parsed.line());
         if (cached != null) return cached;
+
+        // A mechanic and a saved MetaSkill can share a name. If the token is a
+        // registered Mythic mechanic (particle, sound, skill, etc.), parse the
+        // full line as an inline skill instead of accidentally resolving a
+        // MetaSkill with the same name.
+        boolean inlineMechanic = isMechanic(skillManager, parsed.name());
+        if (!inlineMechanic) {
+            try {
+                var named = skillManager.getSkill(parsed.name());
+                if (named.isPresent()) return named.get();
+            } catch (Throwable ignored) {
+            }
+        }
         try {
             Skill inline = skillManager.getSkill(plugin.getDataFolder(), List.of(parsed.line())).orElse(null);
             if (inline != null) {

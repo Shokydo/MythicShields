@@ -7,7 +7,6 @@ import io.mythicshields.util.Expr;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
-import org.bukkit.Sound;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -24,11 +23,13 @@ import org.bukkit.entity.Projectile;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -68,6 +69,8 @@ public final class BlockingService implements Listener {
     private final Map<UUID, Long> lastCooldownMsg = new ConcurrentHashMap<>();
     /** UUID -> текущая прочность */
     private final Map<UUID, Double> durability = new ConcurrentHashMap<>();
+    /** Damage event identity prevents duplicate callbacks without suppressing rapid separate hits. */
+    private final Set<EntityDamageEvent> firedDamageEvents = Collections.newSetFromMap(new WeakHashMap<>());
 
     public BlockingService(MythicShieldsPlugin plugin, ShieldRegistry registry, SkillBridge skillBridge) {
         this.plugin = plugin;
@@ -91,7 +94,7 @@ public final class BlockingService implements Listener {
     public void clearAll() {
         for (UUID id : new HashSet<>(activeShield.keySet())) {
             Player p = Bukkit.getPlayer(id);
-            if (p != null) lower(p, true);
+            if (p != null) lower(p, true, false);
         }
         activeShield.clear();
         hiddenItem.clear();
@@ -103,6 +106,7 @@ public final class BlockingService implements Listener {
         lastCharge.clear();
         blockingCandidates.clear();
         blockStartMs.clear();
+        firedDamageEvents.clear();
     }
 
     public void clear(UUID id) {
@@ -254,16 +258,23 @@ public final class BlockingService implements Listener {
         raisedHand.put(id, hand);
         activeShield.put(id, cfg.getItemId());
 
+        ItemStack raisedItem = current;
         if (current.getType() != Material.SHIELD) {
-            ItemStack shield = new ItemStack(Material.SHIELD);
-            ItemMeta meta = shield.getItemMeta();
+            raisedItem = new ItemStack(Material.SHIELD);
+            ItemMeta meta = raisedItem.getItemMeta();
             if (meta != null) {
                 meta.setUnbreakable(true);
                 meta.setDisplayName("\u00A7r");
-                shield.setItemMeta(meta);
+                raisedItem.setItemMeta(meta);
             }
-            p.getInventory().setItem(hand, shield);
         }
+        // VANILLA_SWAP previously inherited the vanilla shield's block/break
+        // sounds. Apply the configured (silent by default) component to the
+        // temporary shield too, then restore the original item in lower().
+        if (cfg.mode() == ShieldConfig.Mode.VANILLA_SWAP) {
+            plugin.components().applyTemporaryShieldComponent(raisedItem, cfg);
+        }
+        p.getInventory().setItem(hand, raisedItem);
 
         blockStartMs.put(id, System.currentTimeMillis()); // резист при поднятии максимальный
         ShieldLog.debug("Raise " + p.getName() + " (" + cfg.getItemId() + ")");
@@ -272,6 +283,11 @@ public final class BlockingService implements Listener {
     /* ------------------------------------------------------- Lower */
 
     public void lower(Player p, boolean silent) {
+        lower(p, silent, true);
+    }
+
+    /** Lower without applying the normal release cooldown (used for break/axe override/shutdown). */
+    private void lower(Player p, boolean silent, boolean applyReleaseCooldown) {
         UUID id = p.getUniqueId();
         String shieldId = activeShield.remove(id);
         if (shieldId == null) return;
@@ -294,10 +310,9 @@ public final class BlockingService implements Listener {
             }
         }
 
-        // Кулдаун при опускании: щит нельзя поднять RaiseCooldown.Ticks тиков.
-        // Ставим сразу при отпускании ПКМ — блокировка физически снимается,
-        // на предмете в руке показывается ванильный откат.
-        if (cfg != null) {
+        // Кулдаун при обычном опускании. При поломке/disable его задаёт
+        // вызывающая сторона отдельно, чтобы не запускать OnStart второй раз.
+        if (applyReleaseCooldown && cfg != null) {
             setCooldown(p, cfg, cfg.raiseCooldownTicksValue(), false);
         }
 
@@ -311,6 +326,15 @@ public final class BlockingService implements Listener {
         if (!(e.getEntity() instanceof Player p)) return;
         UUID id = p.getUniqueId();
         String shieldId = activeShield.get(id);
+        if (shieldId == null && p.isBlocking()) {
+            // Catch the first hit even if the per-tick state poll has not yet
+            // recorded this COMPONENT shield as active.
+            shieldId = shieldIdInHand(p);
+            if (shieldId != null) {
+                activeShield.putIfAbsent(id, shieldId);
+                blockStartMs.putIfAbsent(id, System.currentTimeMillis());
+            }
+        }
         if (shieldId == null) return;
 
         ShieldConfig cfg = registry.get(shieldId);
@@ -320,6 +344,7 @@ public final class BlockingService implements Listener {
         }
 
         String cause = e.getCause().name();
+        double incomingDamage = e.getDamage();
 
         // Вариации скоупа защиты: щит может защищать от всего (ALL, по умолчанию),
         // только от перечисленных типов (Blocking.ProtectFrom) или всегда пропускать
@@ -348,7 +373,7 @@ public final class BlockingService implements Listener {
         } else {
             e.setDamage(finalDamage);
         }
-        ShieldLog.debug("Damage " + cause + ": " + String.format("%.1f", e.getDamage())
+        ShieldLog.debug("Damage " + cause + ": " + String.format("%.1f", incomingDamage)
                 + " -> " + String.format("%.1f", finalDamage) + " (resist " + String.format("%.2f", reduction)
                 + ", mult " + String.format("%.2f", mult) + ") для " + p.getName());
 
@@ -368,8 +393,10 @@ public final class BlockingService implements Listener {
             });
         }
 
-        chargeCost(p, cfg, e.getDamage(), reduction);
-        fireShieldSkills(p, cfg, reduction, e.getDamage(), e, finalDamage <= 0);
+        // Trigger before spending durability so a breaking hit emits OnTakedShieldDamage
+        // first and OnCrackShield second. Keep the original hit damage in metadata.
+        fireShieldSkills(p, cfg, reduction, incomingDamage, e, finalDamage <= 0);
+        chargeCost(p, cfg, incomingDamage, reduction);
         lastBlock.put(id, System.currentTimeMillis());
     }
 
@@ -397,21 +424,25 @@ public final class BlockingService implements Listener {
             }
             return;
         }
-        if (maybeChargeCost(p, cfg)) {
-            // полный блок: резист пересчитываем так же, как в onDamage
-            double resistFull = decayedResist(p, cfg, id);
-            var resistSecFull = cfg.resistances();
-            if (resistSecFull != null && resistSecFull.isSet(e.getCause().name())) {
-                resistFull = evalExpr(p, Expr.of(resistSecFull.getString(e.getCause().name())), resistFull);
-            }
-            fireShieldSkills(p, cfg, resistFull, 0, e, true);
+        // A cancelled event is still a shield hit. Fire the skill independently
+        // of durability-cost deduplication so rapid hits do not lose their trigger.
+        double resistFull = decayedResist(p, cfg, id);
+        var resistSecFull = cfg.resistances();
+        if (resistSecFull != null && resistSecFull.isSet(e.getCause().name())) {
+            resistFull = evalExpr(p, Expr.of(resistSecFull.getString(e.getCause().name())), resistFull);
         }
+        fireShieldSkills(p, cfg, resistFull, e.getDamage(), e, true);
+        maybeChargeCost(p, cfg, e.getDamage(), resistFull);
         lastBlock.put(id, System.currentTimeMillis());
     }
 
     /** Выстреливает скиллы щита (дамагер — если урон пришёл от сущности). */
     private void fireShieldSkills(Player p, ShieldConfig cfg, double resist, double damage,
                                   EntityDamageEvent e, boolean fullBlock) {
+        // The same event reaches HIGH and MONITOR handlers. Deduplicate by event
+        // identity rather than time, so two rapid independent hits both trigger.
+        if (!firedDamageEvents.add(e)) return;
+
         Entity damager = null;
         if (e instanceof EntityDamageByEntityEvent by) {
             var d = by.getDamager();
@@ -423,19 +454,13 @@ public final class BlockingService implements Listener {
     }
 
     /** Списывает ресурс за блок не чаще раза за тик (дедуп между обработчиками). */
-    private boolean maybeChargeCost(Player p, ShieldConfig cfg) {
+    private void maybeChargeCost(Player p, ShieldConfig cfg, double damage, double resist) {
         UUID id = p.getUniqueId();
         long now = System.currentTimeMillis();
         long last = lastCharge.getOrDefault(id, 0L);
-        if (now - last < 30) return false; // уже списали в этом тике
+        if (now - last < 30) return; // уже списали в этом тике
         lastCharge.put(id, now);
-        chargeCost(p, cfg);
-        return true;
-    }
-
-    private void chargeCost(Player p, ShieldConfig cfg) {
-        double cost = evalExpr(p, cfg.costPerBlock(), 2);
-        spendResource(p, cfg, cost);
+        chargeCost(p, cfg, damage, resist);
     }
 
     /**
@@ -487,7 +512,7 @@ public final class BlockingService implements Listener {
         switch (cfg.onBreak()) {
             case BREAK_ITEM -> {
                 EquipmentSlot hand = raisedHand.getOrDefault(id, EquipmentSlot.HAND);
-                lower(p, true);
+                lower(p, true, false);
                 p.getInventory().setItem(hand, null);
                 setCooldown(p, cfg, cfg.raiseCooldownBreakTicks(), true);
             }
@@ -495,7 +520,7 @@ public final class BlockingService implements Listener {
                 // Щит уходит в кулдаун и НЕ восстанавливает прочность —
                 // после кулдауна регенерация сама отстроит его (если Regen задан),
                 // иначе он «сломан» пока прочность не восстановится иным путём.
-                lower(p, true);
+                lower(p, true, false);
                 if (disabledLikeVanilla) {
                     // Ванильный эффект disable: как будто щит сломали топором
                     applyVanillaDisable(p);
@@ -505,20 +530,25 @@ public final class BlockingService implements Listener {
             case REPAIR -> {
                 // Прочность сразу до максимума; щит недоступен на кулдаун
                 double max = evalExpr(p, cfg.maxDurability(), 100);
-                lower(p, true);
+                lower(p, true, false);
                 durability.put(id, max);
                 setCooldown(p, cfg, cfg.raiseCooldownBreakTicks(), true);
             }
             case DROP_TO_INVENTORY -> {
                 // Дубликат со STAY_BROKEN (предмет уже в инвентаре в COMPONENT-режиме):
                 // опустить и дать кулдаун без восстановления прочности.
-                lower(p, true);
+                lower(p, true, false);
                 setCooldown(p, cfg, cfg.raiseCooldownBreakTicks(), true);
             }
         }
         ShieldLog.debug("Shield broken for " + p.getName());
         // Триггер поломки: звуки/частицы полностью на совести конфига
         skillBridge.fireTrigger(p, cfg, SkillBridge.CRACK);
+        // REPAIR restores durability immediately. With no break cooldown there
+        // will be no cooldown-completion callback to emit OnFullyShield.
+        if (cfg.onBreak() == ShieldConfig.OnBreak.REPAIR && cfg.raiseCooldownBreakTicks() <= 0) {
+            skillBridge.fireTrigger(p, cfg, SkillBridge.FULLY);
+        }
     }
 
     /* ------------------------------------------------------- Regen */
@@ -568,7 +598,7 @@ public final class BlockingService implements Listener {
             durability.put(id, next);
             ShieldLog.debug("Regen " + p.getName() + " (" + cfg.getItemId() + "): "
                     + String.format("%.1f", cur) + " -> " + String.format("%.1f", next));
-            // ~onFullyShield: прочность восстановилась до максимума (и щит не на КД)
+            // ~onFullyShield: прочность восстановилась до максимума, когда щит уже доступен.
             boolean onCooldown = cooldownUntil.getOrDefault(id, 0L) > now || disarmed.contains(id);
             if (next >= max && cur < max && !onCooldown) {
                 skillBridge.fireTrigger(p, cfg, SkillBridge.FULLY);
@@ -585,7 +615,6 @@ public final class BlockingService implements Listener {
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onAxeHit(EntityDamageByEntityEvent e) {
-        if (axeDisableTicksDefault() <= 0) return;
         if (!(e.getEntity() instanceof Player p)) return;
         if (!(e.getDamager() instanceof Player attacker)) return;
         UUID id = p.getUniqueId();
@@ -606,7 +635,8 @@ public final class BlockingService implements Listener {
         } else {
             ticks = axeDisableTicksDefault();
         }
-        lower(p, true);
+        if (ticks <= 0) return;
+        lower(p, true, false);
         setCooldown(p, cfg, ticks, false);
         ShieldLog.debug("Axe-disable " + ticks + "t для " + p.getName());
     }
@@ -622,7 +652,13 @@ public final class BlockingService implements Listener {
     private void setCooldown(Player p, ShieldConfig cfg, int ticks, boolean fromBreak) {
         if (ticks <= 0) return;
         UUID id = p.getUniqueId();
-        long until = System.currentTimeMillis() + ticks * 50L;
+        long now = System.currentTimeMillis();
+        long previousUntil = cooldownUntil.getOrDefault(id, 0L);
+        boolean alreadyCoolingDown = previousUntil > now;
+        long requestedUntil = now + ticks * 50L;
+        // Never shorten a cooldown that is already in progress (e.g. axe-disable
+        // followed by a break cooldown).
+        long until = Math.max(previousUntil, requestedUntil);
         cooldownUntil.put(id, until);
         ShieldLog.debug("Cooldown " + ticks + "t" + (fromBreak ? " (break)" : "") + " для " + p.getName());
         if (Bukkit.isPrimaryThread()) {
@@ -630,8 +666,9 @@ public final class BlockingService implements Listener {
         } else {
             Bukkit.getScheduler().runTask(plugin, () -> disarmDuringCooldown(p, until));
         }
-        // ~onStartShieldCooldown — начало КД по любой причине, кроме поломки
-        if (!fromBreak && cfg != null) {
+        // Fire only on an actual transition into cooldown. A break cooldown is
+        // intentionally excluded; OnCrackShield handles that event instead.
+        if (!fromBreak && !alreadyCoolingDown && cfg != null) {
             skillBridge.fireTrigger(p, cfg, SkillBridge.START_COOLDOWN);
         }
     }
@@ -667,11 +704,15 @@ public final class BlockingService implements Listener {
             plugin.components().ensureInHands(p);
             clearItemCooldownVisual(p);
             ShieldLog.debug("КД кончился, компонент возвращён: " + p.getName());
-            // ~onFullyShield — щит снова готов
+            // Cooldown completion is not a full restore if durability is still
+            // below Max (e.g. STAY_BROKEN). In that case tickRegen fires the
+            // trigger when the shield actually reaches full durability.
             String sid = lastShield.get(id);
             if (sid == null) sid = shieldIdInHand(p);
             ShieldConfig cfg = sid == null ? null : registry.get(sid);
-            if (cfg != null) skillBridge.fireTrigger(p, cfg, SkillBridge.FULLY);
+            if (cfg != null && isFullyRestored(p, id, cfg)) {
+                skillBridge.fireTrigger(p, cfg, SkillBridge.FULLY);
+            }
         }, Math.max(1, remaining / 50L + 1));
     }
 
@@ -813,6 +854,12 @@ public final class BlockingService implements Listener {
 
     private double evalExpr(Player p, Expr expr, double fallback) {
         return expr.eval(null, fallback);
+    }
+
+    private boolean isFullyRestored(Player p, UUID id, ShieldConfig cfg) {
+        if (cfg.resourceType() != ShieldConfig.ResourceType.DURABILITY) return true;
+        double max = evalExpr(p, cfg.maxDurability(), 100);
+        return durability.getOrDefault(id, max) >= max;
     }
 
     /** Реальный clamp + расчёт текущего резиста с учётом спада при удержании. */
