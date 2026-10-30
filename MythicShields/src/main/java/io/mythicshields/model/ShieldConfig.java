@@ -69,7 +69,6 @@ public class ShieldConfig {
     /* Raise cooldown */
     public int raiseCooldownTicks()     { return (int) num("RaiseCooldown.Ticks", 0); }
     public int raiseCooldownBreakTicks(){ return (int) num("RaiseCooldown.OnBreakTicks", 100); }
-    public String raiseCooldownMessage(){ return str("RaiseCooldown.Message", null); }
 
     /* Blocking / damage */
     public Expr damageReduction()       { return Expr.of(str("Blocking.DamageReduction", String.valueOf(num("Blocking.DamageReduction", 0.3)))); }

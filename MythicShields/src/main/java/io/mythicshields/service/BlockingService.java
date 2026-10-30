@@ -119,14 +119,7 @@ public final class BlockingService implements Listener {
 
         // Кулдаун
         Long until = cooldownUntil.get(id);
-        if (until != null && System.currentTimeMillis() < until) {
-            String msg = cfg.raiseCooldownMessage();
-            if (msg != null) {
-                double secs = (until - System.currentTimeMillis()) / 1000.0;
-                p.sendMessage(color(msg.replace("{time}", String.format("%.1f", secs))));
-            }
-            return;
-        }
+        if (until != null && System.currentTimeMillis() < until) return;
 
         final ItemStack held = item.clone();
         final EquipmentSlot hand = e.getHand();
@@ -391,7 +384,4 @@ public final class BlockingService implements Listener {
         return expr.eval(null, fallback);
     }
 
-    private String color(String s) {
-        return s.replace('&', '\u00A7');
-    }
 }

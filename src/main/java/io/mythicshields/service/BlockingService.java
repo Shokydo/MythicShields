@@ -65,8 +65,6 @@ public final class BlockingService implements Listener {
     private final Map<UUID, Long> cooldownUntil = new ConcurrentHashMap<>();
     /** UUID -> игрок временно «разоружён» (компонент blocks_attacks снят на время КД) */
     private final Set<UUID> disarmed = ConcurrentHashMap.newKeySet();
-    /** UUID -> время последнего сообщения о КД (анти-спам, раз в 1 сек) */
-    private final Map<UUID, Long> lastCooldownMsg = new ConcurrentHashMap<>();
     /** UUID -> текущая прочность */
     private final Map<UUID, Double> durability = new ConcurrentHashMap<>();
     /** Damage event identity prevents duplicate callbacks without suppressing rapid separate hits. */
@@ -143,15 +141,7 @@ public final class BlockingService implements Listener {
             // Кастомный щит: предмет остаётся в руке, настоящий блок делает
             // ванильный компонент blocks_attacks. Только отслеживаем состояние.
             Long until = cooldownUntil.get(id);
-            if (until != null && System.currentTimeMillis() < until) {
-                String msg = cfg.raiseCooldownMessage();
-                if (msg != null && !msg.isBlank() && !wasCooldownMsgRecently(id)) {
-                    double secs = (until - System.currentTimeMillis()) / 1000.0;
-                    p.sendMessage(color(msg.replace("{time}", String.format("%.1f", secs))));
-                    markCooldownMsg(id);
-                }
-                return;
-            }
+            if (until != null && System.currentTimeMillis() < until) return;
             double max = evalExpr(p, cfg.maxDurability(), 100);
             if (!durability.containsKey(id)) durability.put(id, max);
             else durability.put(id, Math.min(durability.get(id), max));
@@ -169,14 +159,7 @@ public final class BlockingService implements Listener {
         }
 
         Long until = cooldownUntil.get(id);
-        if (until != null && System.currentTimeMillis() < until) {
-            String msg = cfg.raiseCooldownMessage();
-            if (msg != null && !msg.isBlank()) {
-                double secs = (until - System.currentTimeMillis()) / 1000.0;
-                p.sendMessage(color(msg.replace("{time}", String.format("%.1f", secs))));
-            }
-            return;
-        }
+        if (until != null && System.currentTimeMillis() < until) return;
 
         final ItemStack held = item.clone();
         final EquipmentSlot hand = e.getHand() == null ? EquipmentSlot.HAND : e.getHand();
@@ -224,13 +207,6 @@ public final class BlockingService implements Listener {
                     // снимаем ванильный компонент blocks_attacks с предмета на весь КД —
                     // блокировать физически нечем. По окончании КД компонент вернётся.
                     disarmDuringCooldown(p, until);
-                    ShieldConfig cfgCd = registry.get(shieldId);
-                    String msg = cfgCd == null ? null : cfgCd.raiseCooldownMessage();
-                    if (msg != null && !msg.isBlank() && !wasCooldownMsgRecently(id)) {
-                        double secs = (until - System.currentTimeMillis()) / 1000.0;
-                        p.sendMessage(color(msg.replace("{time}", String.format("%.1f", secs))));
-                        markCooldownMsg(id);
-                    }
                     continue;
                 }
 
@@ -756,16 +732,6 @@ public final class BlockingService implements Listener {
         }
     }
 
-    /** Анти-спам сообщений о КД: не чаще раза в секунду. */
-    private boolean wasCooldownMsgRecently(UUID id) {
-        Long last = lastCooldownMsg.get(id);
-        return last != null && System.currentTimeMillis() - last < 1000;
-    }
-
-    private void markCooldownMsg(UUID id) {
-        lastCooldownMsg.put(id, System.currentTimeMillis());
-    }
-
     private int axeDisableTicksDefault() {
         return plugin.getConfig().getInt("Defaults.Component.AxeDisableTicks", 0);
     }
@@ -887,7 +853,4 @@ public final class BlockingService implements Listener {
         return from - (from - to) * t;                                  // плавный спад до Min
     }
 
-    private String color(String s) {
-        return s.replace('&', '\u00A7');
-    }
 }

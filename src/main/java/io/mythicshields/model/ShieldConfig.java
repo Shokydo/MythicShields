@@ -61,7 +61,6 @@ public class ShieldConfig {
 
     public final Expr raiseCooldownTicks = new Expr("RaiseCooldown.Ticks", 0);
     public final Expr raiseCooldownBreakTicks = new Expr("RaiseCooldown.OnBreakTicks", 100);
-    public final Expr raiseCooldownMessage = new Expr("RaiseCooldown.Message", null);
 
     public final Expr damageReduction = new Expr("Blocking.DamageReduction", 0.3);
     public final Expr damageMultiplier = new Expr("Blocking.DamageMultiplier", 1.0);
@@ -167,7 +166,6 @@ public class ShieldConfig {
     public int regenIntervalTicks()  { return (int) Math.max(1, regenInterval.eval(null, 40)); }
     public boolean isRegenWhileBlocking() { return regenWhileBlocking; }
 
-    public String raiseCooldownMessage() { return raiseCooldownMessage.evalStr(null); }
     public int raiseCooldownTicksValue() { return (int) Math.max(0, raiseCooldownTicks.eval(null, 0)); }
     public int raiseCooldownBreakTicks() { return (int) Math.max(0, raiseCooldownBreakTicks.eval(null, 100)); }
 
@@ -231,7 +229,6 @@ public class ShieldConfig {
             c.raiseCooldownTicks.load(sec, "RaiseCooldown.AntispamTicks");
         }
         c.raiseCooldownBreakTicks.load(sec, "RaiseCooldown.OnBreakTicks");
-        c.raiseCooldownMessage.load(sec, "RaiseCooldown.Message");
 
         c.damageReduction.load(sec, "Blocking.DamageReduction");
         c.damageMultiplier.load(sec, "Blocking.DamageMultiplier");
