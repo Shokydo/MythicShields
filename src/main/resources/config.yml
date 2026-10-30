@@ -55,7 +55,6 @@ Defaults:
   RaiseCooldown:
     Ticks: 0
     OnBreakTicks: 100
-    Message: '&cЩит ещё не готов! (&e{time} &cсек.)'
   Blocking:
     DamageReduction: 0.3
     DamageMultiplier: 1.0

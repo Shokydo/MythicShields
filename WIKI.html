@@ -130,8 +130,7 @@
 
     RaiseCooldown:
       Ticks: 40                <span class="com"># кулдаун на поднятие после опускания</span>
-      OnBreakTicks: 100        <span class="com"># кулдаун после поломки</span>
-      Message: '&amp;cЩит ещё не готов! (&amp;e{time} &amp;cсек.)'</code></pre>
+      OnBreakTicks: 100        <span class="com"># кулдаун после поломки</span></code></pre>
 
 <p>Ничего из <code>Component</code> обычно указывать не нужно — по умолчанию стандартные звуки выключены (механика и анимация блока остаются ванильными), правила урона у компонента нулевые, урон контролирует аддон. Если нужно вернуть звук, задайте <code>BlockSound</code> и/или <code>DisableSound</code>. <strong>Задержка активации блока по умолчанию 0</strong> — щит встаёт мгновенно. Если нужен ванильный «разгон» щита, задайте <code>BlockDelaySeconds: 0.25</code>. Настроить можно так:</p>
 
@@ -224,8 +223,8 @@
 <tr><th>Опция</th><th>По умолчанию</th><th>Описание</th></tr>
 <tr><td><code>Ticks</code></td><td>0</td><td>Кулдаун, который начисляется <strong>в момент опускания щита</strong> (отпустил ПКМ → щит сразу на КД). Пока он идёт, <code>blocks_attacks</code> снят с предмета: щит физически не блокирует, а на предмете в руке виден ванильный откат. По окончании компонент возвращается автоматически (0 = без кулдауна). Заменяет старую систему AntiSpam</td></tr>
 <tr><td><code>OnBreakTicks</code></td><td>100</td><td>Кулдаун после поломки щита</td></tr>
-<tr><td><code>Message</code></td><td>—</td><td>Сообщение при попытке поднять на кулдауне. <code>{time}</code> = оставшиеся секунды</td></tr>
 </table>
+<p>Встроенное сообщение при попытке поднять щит на кулдауне удалено. Если нужно сообщать о начале кулдауна, настройте пользовательский навык на триггер <code>~onStartShieldCooldown</code>.</p>
 <blockquote><code>RaiseCooldown.AntispamTicks</code> больше не используется. Если он остался в старом конфиге, аддон прочитает его как обычный <code>RaiseCooldown.Ticks</code> (при условии, что <code>Ticks</code> не задан явно).</blockquote>
 
 <h3><code>Resource</code> (см. <a href="#resource">раздел 5</a>)</h3>
@@ -266,7 +265,7 @@
 <tr><td><code>DROP_TO_INVENTORY</code></td><td>Предмет безопасно возвращается в инвентарь; дается кулдаун</td></tr>
 <tr><td><code>REPAIR</code></td><td>Прочность восстанавливается до Max; щит недоступен <code>RaiseCooldown.OnBreakTicks</code>, потом работает как новый</td></tr>
 </table>
-<p>В любом случае звучит звук <code>ENTITY_ITEM_BREAK</code> и ставится кулдаун на поднятие.</p>
+<p>В любом случае звучит звук <code>ENTITY_ITEM_BREAK</code> и ставится кулдаун на поднятие. Пока КД идёт, щит поднять нельзя. Встроенное сообщение о кулдауне не отправляется.</p>
 
 <!-- ============ 7 ============ -->
 <h2 id="resist">7. Резисты по типам урона</h2>
@@ -433,7 +432,6 @@ Defaults:
   RaiseCooldown:
     Ticks: 0
     OnBreakTicks: 100
-    Message: '&amp;cЩит ещё не готов! (&amp;e{time} &amp;cсек.)'
   Blocking:
     DamageReduction: 0.3
     DamageMultiplier: 1.0
@@ -482,8 +480,7 @@ Messages:
       RegenWhileBlocking: false
     RaiseCooldown:
       Ticks: 40
-      OnBreakTicks: 100
-      Message: '&amp;cЩит ещё не готов! (&amp;e{time} &amp;cсек.)'</code></pre>
+      OnBreakTicks: 100</code></pre>
 
 <h3>Усиливающий щит на HP</h3>
 <pre class="yaml"><code>BloodShield:
@@ -542,7 +539,7 @@ Messages:
 
 <div class="qa"><b>Q: Можно ли задать резист только для одного типа урона?</b><br>A: Да — укажите нужные ключи в <code>Blocking.Resistances</code>. Не указанные типы получают общий <code>DamageReduction</code>.</div>
 
-<div class="qa"><b>Q: Кулдаун общий для всех щитов?</b><br>A: Кулдаун индивидуален для каждого игрока, но не различает предметы. При попытке поднять любой щит на кулдауне сработает его сообщение.</div>
+<div class="qa"><b>Q: Кулдаун общий для всех щитов?</b><br>A: Кулдаун индивидуален для каждого игрока, но не различает предметы. Пока кулдаун активен, любой щит нельзя поднять; встроенное сообщение не отправляется.</div>
 
 </div>
 </body>

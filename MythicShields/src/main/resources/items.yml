@@ -18,7 +18,6 @@ BastionShield:
     RaiseCooldown:
       Ticks: 40
       OnBreakTicks: 100
-      Message: '&cЩит ещё не готов! (&e{time} &cсек.)'
     Blocking:
       DamageReduction: 0.35
       Resistances:
