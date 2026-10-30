@@ -166,6 +166,17 @@ public final class ComponentService implements Listener {
         PlayerInventory inv = p.getInventory();
         ItemStack item = inv.getItem(hand);
         if (item == null) return false;
+
+        ShieldConfig cfg = resolve(item);
+        if (cfg == null) return false;
+        if (plugin.blocking() != null && plugin.blocking().isOnCooldown(p, cfg)) {
+            if (hasComponent(item)) {
+                removeComponent(item);
+                inv.setItem(hand, item); // keep this shield disarmed for its own cooldown
+            }
+            return false;
+        }
+
         if (applyComponentTo(item)) {
             inv.setItem(hand, item); // write-back — в некоторых слотах это копия
             return true;

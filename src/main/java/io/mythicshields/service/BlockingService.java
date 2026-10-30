@@ -4,11 +4,15 @@ import io.mythicshields.MythicShieldsPlugin;
 import io.mythicshields.model.ShieldConfig;
 import io.mythicshields.registry.ShieldRegistry;
 import io.mythicshields.util.Expr;
+import io.papermc.paper.datacomponent.DataComponentTypes;
+import io.papermc.paper.datacomponent.item.UseCooldown;
+import net.kyori.adventure.key.Key;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -19,13 +23,13 @@ import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.entity.Projectile;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -41,6 +45,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class BlockingService implements Listener {
 
     private static final NamespacedKey MM_ID_KEY = new NamespacedKey("mythicmobs", "item_id");
+
+    private record ShieldCooldownKey(UUID playerId, String shieldId) {}
 
     private final MythicShieldsPlugin plugin;
     private final ShieldRegistry registry;
@@ -61,10 +67,10 @@ public final class BlockingService implements Listener {
     private final Map<UUID, Long> lastCharge = new ConcurrentHashMap<>();
     /** UUID -> время начала удержания блока (мс) — для спада резиста */
     private final Map<UUID, Long> blockStartMs = new ConcurrentHashMap<>();
-    /** UUID -> кулдаун до (мс) */
-    private final Map<UUID, Long> cooldownUntil = new ConcurrentHashMap<>();
-    /** UUID -> игрок временно «разоружён» (компонент blocks_attacks снят на время КД) */
-    private final Set<UUID> disarmed = ConcurrentHashMap.newKeySet();
+    /** Player + shield ID -> cooldown end time (ms); other Mythic items remain usable. */
+    private final Map<ShieldCooldownKey, Long> cooldownUntil = new ConcurrentHashMap<>();
+    /** Player + shield ID whose blocks_attacks component is temporarily removed. */
+    private final Set<ShieldCooldownKey> disarmed = ConcurrentHashMap.newKeySet();
     /** UUID -> текущая прочность */
     private final Map<UUID, Double> durability = new ConcurrentHashMap<>();
     /** Damage event identity prevents duplicate callbacks without suppressing rapid separate hits. */
@@ -89,16 +95,40 @@ public final class BlockingService implements Listener {
         return activeShield.containsKey(p.getUniqueId());
     }
 
+    public boolean isOnCooldown(Player p, ShieldConfig cfg) {
+        return cfg != null && cooldownUntil.getOrDefault(cooldownKey(p.getUniqueId(), cfg), 0L)
+                > System.currentTimeMillis();
+    }
+
+    private long cooldownUntil(UUID playerId, ShieldConfig cfg) {
+        return cooldownUntil.getOrDefault(cooldownKey(playerId, cfg), 0L);
+    }
+
+    private ShieldCooldownKey cooldownKey(UUID playerId, ShieldConfig cfg) {
+        return new ShieldCooldownKey(playerId, cfg.getItemId().toLowerCase(Locale.ROOT));
+    }
+
     public void clearAll() {
         for (UUID id : new HashSet<>(activeShield.keySet())) {
             Player p = Bukkit.getPlayer(id);
             if (p != null) lower(p, true, false);
+        }
+        for (ShieldCooldownKey key : new HashSet<>(cooldownUntil.keySet())) {
+            Player p = Bukkit.getPlayer(key.playerId());
+            ShieldConfig cfg = registry.get(key.shieldId());
+            if (p != null && cfg != null) clearItemCooldownVisual(p, cfg);
+        }
+        for (ShieldCooldownKey key : new HashSet<>(disarmed)) {
+            Player p = Bukkit.getPlayer(key.playerId());
+            ShieldConfig cfg = registry.get(key.shieldId());
+            if (p != null && cfg != null) restoreShieldComponentsInHands(p, cfg);
         }
         activeShield.clear();
         hiddenItem.clear();
         raisedHand.clear();
         durability.clear();
         cooldownUntil.clear();
+        disarmed.clear();
         lastBlock.clear();
         lastShield.clear();
         lastCharge.clear();
@@ -108,11 +138,18 @@ public final class BlockingService implements Listener {
     }
 
     public void clear(UUID id) {
+        Player p = Bukkit.getPlayer(id);
+        for (ShieldCooldownKey key : new HashSet<>(cooldownUntil.keySet())) {
+            if (!key.playerId().equals(id)) continue;
+            ShieldConfig cfg = registry.get(key.shieldId());
+            if (p != null && cfg != null) clearItemCooldownVisual(p, cfg);
+        }
         activeShield.remove(id);
         hiddenItem.remove(id);
         raisedHand.remove(id);
         durability.remove(id);
-        cooldownUntil.remove(id);
+        cooldownUntil.keySet().removeIf(key -> key.playerId().equals(id));
+        disarmed.removeIf(key -> key.playerId().equals(id));
         lastBlock.remove(id);
         lastShield.remove(id);
         lastCharge.remove(id);
@@ -137,11 +174,15 @@ public final class BlockingService implements Listener {
         UUID id = p.getUniqueId();
         if (activeShield.containsKey(id)) return;
 
+        long until = cooldownUntil(id, cfg);
+        if (until > System.currentTimeMillis()) {
+            disarmDuringCooldown(p, cfg, until);
+            return;
+        }
+
         if (cfg.mode() == ShieldConfig.Mode.COMPONENT) {
             // Кастомный щит: предмет остаётся в руке, настоящий блок делает
             // ванильный компонент blocks_attacks. Только отслеживаем состояние.
-            Long until = cooldownUntil.get(id);
-            if (until != null && System.currentTimeMillis() < until) return;
             double max = evalExpr(p, cfg.maxDurability(), 100);
             if (!durability.containsKey(id)) durability.put(id, max);
             else durability.put(id, Math.min(durability.get(id), max));
@@ -157,9 +198,6 @@ public final class BlockingService implements Listener {
         } else {
             durability.put(id, Math.min(durability.get(id), max));
         }
-
-        Long until = cooldownUntil.get(id);
-        if (until != null && System.currentTimeMillis() < until) return;
 
         final ItemStack held = item.clone();
         final EquipmentSlot hand = e.getHand() == null ? EquipmentSlot.HAND : e.getHand();
@@ -200,18 +238,15 @@ public final class BlockingService implements Listener {
             if (blocking) {
                 String shieldId = shieldIdInHand(p);
                 if (shieldId == null) continue;
-
-                Long until = cooldownUntil.get(id);
-                if (until != null && System.currentTimeMillis() < until) {
-                    // КД активен, но щит в руке блокирует ванильно. Честный disarm:
-                    // снимаем ванильный компонент blocks_attacks с предмета на весь КД —
-                    // блокировать физически нечем. По окончании КД компонент вернётся.
-                    disarmDuringCooldown(p, until);
-                    continue;
-                }
-
                 ShieldConfig cfg = registry.get(shieldId);
                 if (cfg == null) continue;
+
+                long until = cooldownUntil(id, cfg);
+                if (until > System.currentTimeMillis()) {
+                    // Снимаем блокирующий компонент только с конкретного щита на КД.
+                    disarmDuringCooldown(p, cfg, until);
+                    continue;
+                }
 
                 double max = evalExpr(p, cfg.maxDurability(), 100);
                 durability.putIfAbsent(id, max);
@@ -575,7 +610,7 @@ public final class BlockingService implements Listener {
             ShieldLog.debug("Regen " + p.getName() + " (" + cfg.getItemId() + "): "
                     + String.format("%.1f", cur) + " -> " + String.format("%.1f", next));
             // ~onFullyShield: прочность восстановилась до максимума, когда щит уже доступен.
-            boolean onCooldown = cooldownUntil.getOrDefault(id, 0L) > now || disarmed.contains(id);
+            boolean onCooldown = cooldownUntil(id, cfg) > now || disarmed.contains(cooldownKey(id, cfg));
             if (next >= max && cur < max && !onCooldown) {
                 skillBridge.fireTrigger(p, cfg, SkillBridge.FULLY);
             }
@@ -626,107 +661,154 @@ public final class BlockingService implements Listener {
      *                  а ~onStartShieldCooldown не вызывается)
      */
     private void setCooldown(Player p, ShieldConfig cfg, int ticks, boolean fromBreak) {
-        if (ticks <= 0) return;
+        if (ticks <= 0 || cfg == null) return;
         UUID id = p.getUniqueId();
+        ShieldCooldownKey key = cooldownKey(id, cfg);
         long now = System.currentTimeMillis();
-        long previousUntil = cooldownUntil.getOrDefault(id, 0L);
+        long previousUntil = cooldownUntil.getOrDefault(key, 0L);
         boolean alreadyCoolingDown = previousUntil > now;
         long requestedUntil = now + ticks * 50L;
-        // Never shorten a cooldown that is already in progress (e.g. axe-disable
-        // followed by a break cooldown).
+        // Never shorten a cooldown already running for this shield.
         long until = Math.max(previousUntil, requestedUntil);
-        cooldownUntil.put(id, until);
-        ShieldLog.debug("Cooldown " + ticks + "t" + (fromBreak ? " (break)" : "") + " для " + p.getName());
+        cooldownUntil.put(key, until);
+        ShieldLog.debug("Cooldown " + ticks + "t" + (fromBreak ? " (break)" : "")
+                + " для " + p.getName() + " / " + cfg.getItemId());
         if (Bukkit.isPrimaryThread()) {
-            disarmDuringCooldown(p, until);
+            disarmDuringCooldown(p, cfg, until);
         } else {
-            Bukkit.getScheduler().runTask(plugin, () -> disarmDuringCooldown(p, until));
+            Bukkit.getScheduler().runTask(plugin, () -> disarmDuringCooldown(p, cfg, until));
         }
         // Fire only on an actual transition into cooldown. A break cooldown is
         // intentionally excluded; OnCrackShield handles that event instead.
-        if (!fromBreak && !alreadyCoolingDown && cfg != null) {
+        if (!fromBreak && !alreadyCoolingDown) {
             skillBridge.fireTrigger(p, cfg, SkillBridge.START_COOLDOWN);
         }
     }
 
-    /**
-     * Честный disarm на время КД: снимаем ванильный компонент blocks_attacks
-     * с предмета в руках — блокировать физически нечем. По окончании КД компонент
-     * возвращается. Реагируем на обе руки и повторяем, пока КД не кончится
-     * (предмет мог смениться в инвентаре).
-     */
-    private void disarmDuringCooldown(Player p, long cooldownUntilMs) {
-        UUID id = p.getUniqueId();
-        if (disarmed.add(id)) {
-            ShieldLog.debug("Disarm на КД для " + p.getName());
-            scheduleDisarmRestore(p, id);
+    /** Снимает блокирующий компонент и ставит визуальный КД только на этот щит. */
+    private void disarmDuringCooldown(Player p, ShieldConfig cfg, long until) {
+        ShieldCooldownKey key = cooldownKey(p.getUniqueId(), cfg);
+        if (disarmed.add(key)) {
+            ShieldLog.debug("Disarm на КД для " + p.getName() + " / " + cfg.getItemId());
+            scheduleDisarmRestore(p, key);
         }
-        removeComponentFromHands(p);
-        applyItemCooldownVisual(p, cooldownUntilMs);
+        if (cfg.mode() == ShieldConfig.Mode.COMPONENT) {
+            removeComponentFromHands(p, cfg);
+        }
+        applyItemCooldownVisual(p, cfg, until);
     }
 
-    /** Возвращает компонент ровно тогда, когда КД действительно закончился. */
-    private void scheduleDisarmRestore(Player p, UUID id) {
-        long until = cooldownUntil.getOrDefault(id, 0L);
+    /** Возвращает компонент только щиту с истёкшим КД. */
+    private void scheduleDisarmRestore(Player p, ShieldCooldownKey key) {
+        long until = cooldownUntil.getOrDefault(key, 0L);
         long remaining = Math.max(1, until - System.currentTimeMillis());
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            if (!p.isOnline()) { disarmed.remove(id); return; }
-            if (cooldownUntil.getOrDefault(id, 0L) > System.currentTimeMillis()) {
-                // КД продлили (например, щит сломался) — ждём дальше
-                scheduleDisarmRestore(p, id);
+            if (!p.isOnline()) {
+                disarmed.remove(key);
                 return;
             }
-            disarmed.remove(id);
-            plugin.components().ensureInHands(p);
-            clearItemCooldownVisual(p);
-            ShieldLog.debug("КД кончился, компонент возвращён: " + p.getName());
+            if (cooldownUntil.getOrDefault(key, 0L) > System.currentTimeMillis()) {
+                // КД продлили (например, disable сменился поломкой) — ждём дальше.
+                scheduleDisarmRestore(p, key);
+                return;
+            }
+
+            long expiredUntil = cooldownUntil.getOrDefault(key, 0L);
+            cooldownUntil.remove(key, expiredUntil);
+            disarmed.remove(key);
+            ShieldConfig cfg = registry.get(key.shieldId());
+            if (cfg != null && cfg.mode() == ShieldConfig.Mode.COMPONENT) {
+                restoreShieldComponentsInHands(p, cfg);
+            }
+            ShieldLog.debug("КД кончился для " + p.getName() + " / " + key.shieldId());
+
             // Cooldown completion is not a full restore if durability is still
-            // below Max (e.g. STAY_BROKEN). In that case tickRegen fires the
-            // trigger when the shield actually reaches full durability.
-            String sid = lastShield.get(id);
-            if (sid == null) sid = shieldIdInHand(p);
-            ShieldConfig cfg = sid == null ? null : registry.get(sid);
-            if (cfg != null && isFullyRestored(p, id, cfg)) {
+            // below Max. In that case tickRegen fires the trigger on full restore.
+            if (cfg != null && isFullyRestored(p, key.playerId(), cfg)) {
                 skillBridge.fireTrigger(p, cfg, SkillBridge.FULLY);
             }
         }, Math.max(1, remaining / 50L + 1));
     }
 
-    /** Ванильный откат на предметах в руках — видно, что щит на кулдауне. */
-    private void applyItemCooldownVisual(Player p, long untilMs) {
+    /** Визуальный откат только предметов, распознанных как этот щит. */
+    private void applyItemCooldownVisual(Player p, ShieldConfig cfg, long untilMs) {
         long remainingMs = untilMs - System.currentTimeMillis();
         if (remainingMs <= 0 || remainingMs > 3_600_000) return;
         int ticks = (int) Math.max(1, remainingMs / 50L);
-        try {
-            p.setCooldown(Material.SHIELD, ticks);
-            for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HAND, EquipmentSlot.OFF_HAND}) {
-                ItemStack it = p.getInventory().getItem(slot);
-                if (it != null && it.getType() != Material.AIR) {
-                    p.setCooldown(it.getType(), ticks);
-                }
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    /** Убирает визуальный КД с предметов по окончании настоящего КД. */
-    private void clearItemCooldownVisual(Player p) {
-        try {
-            if (p.getCooldown(Material.SHIELD) > 0) p.setCooldown(Material.SHIELD, 0);
-            for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HAND, EquipmentSlot.OFF_HAND}) {
-                ItemStack it = p.getInventory().getItem(slot);
-                if (it != null && it.getType() != Material.AIR && p.getCooldown(it.getType()) > 0) {
-                    p.setCooldown(it.getType(), 0);
-                }
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    private void removeComponentFromHands(Player p) {
         for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HAND, EquipmentSlot.OFF_HAND}) {
             ItemStack item = p.getInventory().getItem(slot);
-            if (item == null || !item.hasItemMeta()) continue;
-            if (plugin.components().hasComponent(item)) {
-                plugin.components().removeComponent(item);
+            ShieldConfig heldCfg = item == null ? null : resolveConfig(item);
+            if (heldCfg == null || !sameShield(heldCfg, cfg)) continue;
+            if (!ensureShieldCooldownGroup(item, cfg)) continue;
+            p.getInventory().setItem(slot, item); // persist USE_COOLDOWN group before applying timer
+            try {
+                p.setCooldown(item, ticks); // Paper API: scoped to the item's cooldown group
+            } catch (Throwable t) {
+                ShieldLog.warn("Не удалось показать КД на щите " + cfg.getItemId() + ": " + t);
+            }
+        }
+    }
+
+    private void clearItemCooldownVisual(Player p, ShieldConfig cfg) {
+        Key group = shieldCooldownGroup(cfg);
+        for (ItemStack item : p.getInventory().getContents()) {
+            ShieldConfig heldCfg = item == null ? null : resolveConfig(item);
+            if (heldCfg == null || !sameShield(heldCfg, cfg)) continue;
+            try {
+                UseCooldown cooldown = item.getData(DataComponentTypes.USE_COOLDOWN);
+                if (cooldown != null && group.equals(cooldown.cooldownGroup())) {
+                    p.setCooldown(item, 0);
+                }
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    /**
+     * Item cooldowns are grouped by material unless the item has its own cooldown group.
+     * Give each Mythic shield ID a distinct group so same-material Mythic items are unaffected.
+     */
+    private boolean ensureShieldCooldownGroup(ItemStack item, ShieldConfig cfg) {
+        try {
+            UseCooldown current = item.getData(DataComponentTypes.USE_COOLDOWN);
+            Key group = shieldCooldownGroup(cfg);
+            if (current != null && group.equals(current.cooldownGroup())) return true;
+            float seconds = current == null ? 0.05f : Math.max(0.05f, current.seconds());
+            item.setData(DataComponentTypes.USE_COOLDOWN,
+                    UseCooldown.useCooldown(seconds).cooldownGroup(group).build());
+            return true;
+        } catch (Throwable t) {
+            ShieldLog.warn("Не удалось настроить отдельную группу КД для щита " + cfg.getItemId() + ": " + t);
+            return false;
+        }
+    }
+
+    private Key shieldCooldownGroup(ShieldConfig cfg) {
+        String id = cfg.getItemId().toLowerCase(Locale.ROOT);
+        String safeId = id.replaceAll("[^a-z0-9._/-]", "_");
+        String hash = Integer.toUnsignedString(id.hashCode(), 36);
+        return Key.key("mythicshields", "shield/" + safeId + "-" + hash);
+    }
+
+    private boolean sameShield(ShieldConfig a, ShieldConfig b) {
+        return a.getItemId().equalsIgnoreCase(b.getItemId());
+    }
+
+    private void removeComponentFromHands(Player p, ShieldConfig target) {
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HAND, EquipmentSlot.OFF_HAND}) {
+            ItemStack item = p.getInventory().getItem(slot);
+            ShieldConfig heldCfg = item == null ? null : resolveConfig(item);
+            if (heldCfg == null || !sameShield(heldCfg, target) || !plugin.components().hasComponent(item)) continue;
+            plugin.components().removeComponent(item);
+            p.getInventory().setItem(slot, item); // write-back
+        }
+    }
+
+    private void restoreShieldComponentsInHands(Player p, ShieldConfig target) {
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HAND, EquipmentSlot.OFF_HAND}) {
+            ItemStack item = p.getInventory().getItem(slot);
+            ShieldConfig heldCfg = item == null ? null : resolveConfig(item);
+            if (heldCfg == null || !sameShield(heldCfg, target) || heldCfg.mode() != ShieldConfig.Mode.COMPONENT) continue;
+            if (plugin.components().applyComponentTo(item)) {
                 p.getInventory().setItem(slot, item); // write-back
             }
         }
@@ -789,11 +871,20 @@ public final class BlockingService implements Listener {
     /* ------------------------------------------------------- Helpers */
 
     private String shieldIdInHand(Player p) {
-        for (ItemStack it : new ItemStack[]{p.getInventory().getItemInMainHand(), p.getInventory().getItemInOffHand()}) {
-            ShieldConfig cfg = it == null ? null : resolveConfig(it);
-            if (cfg != null && cfg.mode() == ShieldConfig.Mode.COMPONENT) return cfg.getItemId();
+        if (p.hasActiveItem()) {
+            return shieldIdInSlot(p, p.getActiveItemHand());
+        }
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HAND, EquipmentSlot.OFF_HAND}) {
+            String shieldId = shieldIdInSlot(p, slot);
+            if (shieldId != null) return shieldId;
         }
         return null;
+    }
+
+    private String shieldIdInSlot(Player p, EquipmentSlot slot) {
+        ItemStack item = p.getInventory().getItem(slot);
+        ShieldConfig cfg = item == null ? null : resolveConfig(item);
+        return cfg != null && cfg.mode() == ShieldConfig.Mode.COMPONENT ? cfg.getItemId() : null;
     }
 
     private ShieldConfig resolveConfig(ItemStack item) {

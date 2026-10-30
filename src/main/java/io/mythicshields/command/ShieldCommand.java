@@ -7,6 +7,7 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -68,10 +69,12 @@ public final class ShieldCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage("§7Используй §f/mythicshields bind <id>§7, если предмет выдан не MythicMobs (например, Nexo).");
             return;
         }
-        if (plugin.components().applyComponentTo(item)) {
-            p.getInventory().setItemInMainHand(item);
+        if (plugin.blocking().isOnCooldown(p, cfg)) {
+            plugin.components().ensureInSlot(p, EquipmentSlot.HAND);
+            sender.sendMessage("§eЭтот щит пока на кулдауне.");
+        } else if (plugin.components().ensureInSlot(p, EquipmentSlot.HAND)) {
             sender.sendMessage("§aКомпонент blocks_attacks надет на предмет (" + cfg.getItemId() + "). Зажми ПКМ — блок должен работать нативно.");
-        } else if (plugin.components().hasComponent(item)) {
+        } else if (plugin.components().hasComponent(p.getInventory().getItemInMainHand())) {
             sender.sendMessage("§eКомпонент уже есть на предмете. Если блок всё равно не работает — см. §f/mythicshields bind§e и Debug: true.");
         }
     }
@@ -105,9 +108,7 @@ public final class ShieldCommand implements CommandExecutor, TabCompleter {
 
         boolean applied = false;
         if (cfg.mode() == ShieldConfig.Mode.COMPONENT) {
-            ItemStack after = p.getInventory().getItemInMainHand();
-            if (plugin.components().applyComponentTo(after)) {
-                p.getInventory().setItemInMainHand(after);
+            if (plugin.components().ensureInSlot(p, EquipmentSlot.HAND)) {
                 applied = true;
             }
         }
